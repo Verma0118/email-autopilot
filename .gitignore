@@ -12,6 +12,7 @@ __pycache__/
 *.pyc
 
 # generated artifacts live outside the repo but belt-and-braces
+# (docs/index.html IS committed — it is the encrypted Pages payload)
 dashboard.html
 digests/
 contacts*.json

@@ -139,6 +139,12 @@ def main():
                 report["fatal"].append(f"prospecting crashed: {traceback.format_exc(limit=3)}")
 
         path, summary = digest.run(contacts, report, llm.calls_made(), dry_run=args.dry_run)
+        try:
+            import publish
+            pub = publish.run(report, dry_run=args.dry_run)
+            log({"action": "publish", "status": pub["status"]})
+        except Exception:
+            report["fatal"].append(f"publish crashed: {traceback.format_exc(limit=2)}")
         log({"action": "run_end", "digest": str(path), "summary": summary})
         print(f"digest: {path}\n{summary}")
     finally:
