@@ -1,0 +1,42 @@
+# ICP for prospecting. Source: Volant/Plans/mvp-proof-pack.md (high flight volume,
+# corrected after Mark Martin discovery call 2026-07-09).
+
+segments:
+  - name: dfr-programs
+    brief: >
+      Drone as First Responder and dock-in-a-box programs at US police/fire
+      departments. Continuous daily flights, BVLOS waivers, public records
+      exposure. Target program managers, chief pilots, unit commanders.
+  - name: utility-uas-crews
+    brief: >
+      Utility company UAS programs with dedicated crews flying daily
+      (inspection of poles, transmission, substations). Ameren-class programs:
+      200+ poles/day teams. Target UAS ops supervisors and mission specialists.
+  - name: drone-delivery
+    brief: >
+      Drone delivery operators with daily commercial flights (medical,
+      retail, logistics). Target flight ops managers, chief pilots, network
+      ops leads. Not C-suite.
+  - name: multi-office-fleets
+    brief: >
+      Engineering/survey firms with distributed multi-office drone fleets
+      (Halff-class: 20+ offices, many pilots). Target UAS managers and chief
+      pilots responsible for fleet-wide records and training.
+  - name: training-operations
+    brief: >
+      UAS training organizations certifying 100+ pilots (Part 107 schools,
+      LiDAR/RPIC training providers). Target lead instructors and program
+      directors who own certification records.
+
+seed_candidates:
+  - {name: Paul Stegmaier, role: Contractor Services Supervisor UAS Ops, company: Ameren Illinois, linkedin_url: "https://linkedin.com/in/paul-stegmaier-58b5a557", segment: utility-uas-crews, why_icp: Supervises UAS ops within Ameren electric programs}
+  - {name: Colton Spires, role: UAS Operations Specialist, company: Ameren, linkedin_url: "https://linkedin.com/in/colton-spires-pmp-176739167", segment: utility-uas-crews, why_icp: Ameren UAS team testing Auterion Suite with Freefly Astro fleet}
+  - {name: Rohit Gohil, role: Senior Data and Technology Specialist UAS, company: Ameren, linkedin_url: "https://linkedin.com/in/rohit-gohil-608433120", segment: utility-uas-crews, why_icp: 7+ years on Ameren UAS data pipeline}
+  - {name: Sean Hernandez, role: UAS Data and Technology Analyst, company: Ameren, linkedin_url: "https://linkedin.com/in/sean-hernandez-a4644ba5", segment: utility-uas-crews, why_icp: 200+ poles/day missions, BVLOS waiver development, SMS development}
+  - {name: Carlos Femmer, role: Director of Data Acquisition, company: HDR, linkedin_url: "https://linkedin.com/in/carlosfemmer", segment: multi-office-fleets, why_icp: Leads data acquisition across HDR offices, national BVLOS and Blue UAS advisor}
+  - {name: Abrem Ayana, role: Director of DFR / sUAS Program Manager, company: National Real Time Crime Center Association / Brookhaven PD, linkedin_url: "https://linkedin.com/in/abremayana", segment: dfr-programs, why_icp: National DFR best-practices lead plus founded a department DFR program}
+  - {name: Steve Lincoln, role: DFR Program Manager, company: Redmond Police WA, linkedin_url: "https://linkedin.com/in/steve-lincoln-a49204219", segment: dfr-programs, why_icp: Washington State first full-time DFR program, first no-VO BVLOS waiver in PNW}
+  - {name: Steven Oscar, role: UAS Program Manager, company: Las Vegas Metropolitan Police Department, linkedin_url: "https://linkedin.com/in/steven-oscar-173b44222", segment: dfr-programs, why_icp: LVMPD UAS program with Skydio X10 docks, ex-BRINC chief pilot}
+  - {name: Luis Figueiredo, role: Chief UAS Pilot / Program Coordinator, company: Elizabeth Police Department NJ, linkedin_url: "https://linkedin.com/in/luis-figueiredo-1b90b31ab", segment: dfr-programs, why_icp: First US BVLOS waiver for Class Bravo airspace, 12+ full-time pilots}
+  - {name: Geoff Goodson, role: Police Sergeant UAS and DFR Supervisor, company: City of Temple TX, linkedin_url: "https://linkedin.com/in/geoff-goodson-a474644b", segment: dfr-programs, why_icp: High-volume drone deployments, real-time crime center integration}
+  - {name: LeAnne Hartin, role: sUAS Program Manager / Unit Commander, company: Law Enforcement (regional), linkedin_url: "https://linkedin.com/in/leanne-hartin-5130a7341", segment: dfr-programs, why_icp: End-to-end fleet lifecycle plus records management and compliance audits}

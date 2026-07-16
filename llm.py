@@ -1,0 +1,100 @@
+"""claude -p subprocess wrapper.
+
+The LLM gets no Write/Edit tools and no Gmail access, ever. Exa search tools
+only when explicitly allowed. Output must be a single JSON object; Python
+validates it before anything is acted on.
+"""
+import json
+import os
+import re
+import subprocess
+
+import config
+
+_calls_made = 0
+llm_down = False
+
+
+class LLMError(Exception):
+    pass
+
+
+def _clean_env():
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)  # force Pro subscription OAuth
+    env["PATH"] = f"{config.HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    return env
+
+
+def _extract_json(text):
+    m = re.search(r"\{[\s\S]*\}", text)
+    if not m:
+        raise LLMError(f"no JSON object in model output: {text[:300]!r}")
+    return json.loads(m.group(0))
+
+
+def call(prompt, use_exa=False, max_turns=8):
+    """Run claude -p, return parsed JSON dict. Raises LLMError."""
+    global _calls_made, llm_down
+    if llm_down:
+        raise LLMError("LLM marked down for this run")
+    if _calls_made >= config.LLM_CALL_BUDGET:
+        raise LLMError(f"call budget ({config.LLM_CALL_BUDGET}) exhausted")
+    _calls_made += 1
+
+    mcp_config = config.MCP_EXA if use_exa else config.MCP_EMPTY
+    cmd = [
+        config.CLAUDE_BIN, "-p", prompt,
+        "--output-format", "json",
+        "--max-turns", str(max_turns),
+        "--strict-mcp-config", "--mcp-config", str(mcp_config),
+    ]
+    if use_exa:
+        cmd += ["--allowedTools", ",".join(config.EXA_TOOLS)]
+
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            timeout=config.LLM_TIMEOUT, env=_clean_env(), cwd=str(config.HOME),
+        )
+    except subprocess.TimeoutExpired:
+        raise LLMError(f"claude -p timed out after {config.LLM_TIMEOUT}s")
+
+    # Parse stdout first: plugin SessionEnd hooks can fail and force exit 1
+    # even when the model result is perfectly good.
+    envelope = None
+    try:
+        envelope = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        pass
+
+    if envelope is None:
+        err = (proc.stderr or proc.stdout or "")[:500]
+        if re.search(r"auth|login|credential|API key", err, re.IGNORECASE):
+            llm_down = True
+            raise LLMError(f"auth failure, skipping all LLM stages this run: {err}")
+        raise LLMError(f"claude exited {proc.returncode}, no JSON envelope: {err}")
+
+    if envelope.get("is_error"):
+        result_text = str(envelope.get("result", ""))
+        if envelope.get("api_error_status") == 429 or "session limit" in result_text.lower():
+            llm_down = True
+            raise LLMError(f"rate/session limit, skipping all LLM stages this run: {result_text[:200]}")
+        raise LLMError(f"CLI error result: {result_text[:300]}")
+    return _extract_json(envelope.get("result", ""))
+
+
+def call_with_retry(prompt, use_exa=False, retry_suffix=None, validate=None):
+    """One call plus one retry. validate(result) -> list of error strings."""
+    result = call(prompt, use_exa=use_exa)
+    errors = validate(result) if validate else []
+    if not errors:
+        return result, []
+    feedback = (retry_suffix or "Your previous output had these problems, fix ALL of them:") + "\n- " + "\n- ".join(errors)
+    result = call(prompt + "\n\n" + feedback, use_exa=use_exa)
+    errors = validate(result) if validate else []
+    return result, errors
+
+
+def calls_made():
+    return _calls_made
