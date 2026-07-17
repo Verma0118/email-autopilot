@@ -64,3 +64,15 @@ def resolve(item_id, new_status, gmail_draft_id=None):
             save(items)
             return i
     return None
+
+
+def reopen(item_id):
+    """Undo a skip — restore to pending so it reappears in the panel."""
+    items = load()
+    for i in items:
+        if i["id"] == item_id and i["status"] == "skipped":
+            i["status"] = "pending"
+            i["resolved"] = None
+            save(items)
+            return i
+    return None
