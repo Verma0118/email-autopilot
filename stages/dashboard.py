@@ -1,7 +1,7 @@
 """Render ~/Desktop/EmailCRM/dashboard.html — self-contained status page.
 
-Regenerated on every run. Single file, no external assets, vanilla HTML/CSS,
-native <details> only. Light/dark via prefers-color-scheme.
+Regenerated on every run. Single file, vanilla HTML/CSS, native <details>.
+Light/dark via prefers-color-scheme. Fonts load from Google when online.
 """
 import html
 import re
@@ -12,71 +12,133 @@ import crm
 
 CSS = """
 :root {
-  --bg:#fafafa; --card:#ffffff; --card2:#f4f4f5; --ink:#18181b; --ink2:#71717a;
-  --line:rgba(24,24,27,.09); --line2:rgba(24,24,27,.16);
-  --accent:#5753c6; --accent-soft:rgba(87,83,198,.09);
-  --good:#177245; --good-bg:rgba(23,114,69,.08); --warn:#96650b; --warn-bg:rgba(150,101,11,.09);
-  --bad:#c22f36; --bad-bg:rgba(194,47,54,.08);
-  --shadow:0 1px 1px rgba(24,24,27,.03), 0 2px 6px rgba(24,24,27,.04);
+  --bg0:#f3f6f4; --bg1:#e8efeb; --surface:#fbfcfb; --surface2:#f0f4f1;
+  --ink:#14201a; --ink2:#5c6b63; --ink3:#8a968f;
+  --line:rgba(20,32,26,.09); --line2:rgba(20,32,26,.16);
+  --accent:#0f6e56; --accent-soft:rgba(15,110,86,.1);
+  --good:#177245; --good-bg:rgba(23,114,69,.1);
+  --warn:#9a6700; --warn-bg:rgba(154,103,0,.1);
+  --bad:#b42318; --bad-bg:rgba(180,35,24,.09);
   --ease:cubic-bezier(0.23, 1, 0.32, 1);
+  --font:"Figtree", "Segoe UI", sans-serif;
+  --display:"Fraunces", Georgia, serif;
+  --radius:14px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg:#0e0e10; --card:#17171a; --card2:#1e1e22; --ink:#ededef; --ink2:#9d9da6;
-    --line:rgba(237,237,239,.08); --line2:rgba(237,237,239,.16);
-    --accent:#918fe8; --accent-soft:rgba(145,143,232,.12);
-    --good:#41c780; --good-bg:rgba(65,199,128,.1); --warn:#d9a636; --warn-bg:rgba(217,166,54,.1);
-    --bad:#f0555d; --bad-bg:rgba(240,85,93,.1);
-    --shadow:none;
+    --bg0:#0c1210; --bg1:#141c18; --surface:#151c19; --surface2:#1c2521;
+    --ink:#e8eee9; --ink2:#9aaba2; --ink3:#6d7c74;
+    --line:rgba(232,238,233,.08); --line2:rgba(232,238,233,.14);
+    --accent:#3dba8f; --accent-soft:rgba(61,186,143,.14);
+    --good:#3ecf8e; --good-bg:rgba(62,207,142,.12);
+    --warn:#e8b339; --warn-bg:rgba(232,179,57,.12);
+    --bad:#f07178; --bad-bg:rgba(240,113,120,.12);
   }
 }
 * { box-sizing:border-box; margin:0; }
-body { background:var(--bg); color:var(--ink);
-  font:15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+body {
+  background:
+    radial-gradient(1100px 480px at 8% -8%, rgba(15,110,86,.09), transparent 55%),
+    radial-gradient(800px 380px at 100% 0%, rgba(20,32,26,.04), transparent 50%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
+  color:var(--ink);
+  font:15px/1.55 var(--font);
+  font-weight:450;
   -webkit-font-smoothing:antialiased;
-  max-width:880px; margin:0 auto; padding:36px 24px 80px; }
+  max-width:880px; margin:0 auto; padding:36px 24px 80px;
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background:
+      radial-gradient(1000px 460px at 8% -8%, rgba(61,186,143,.12), transparent 55%),
+      radial-gradient(720px 360px at 100% 0%, rgba(61,186,143,.05), transparent 45%),
+      linear-gradient(180deg, var(--bg0), var(--bg1));
+  }
+}
 a { color:var(--accent); text-decoration:none; }
 a:hover { text-decoration:underline; text-underline-offset:3px; }
-a:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+a:focus-visible, summary:focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px; border-radius:6px;
+}
 
-section, header.top, p.meta { opacity:0; transform:translateY(6px);
-  animation:rise 400ms var(--ease) forwards; }
-header.top { animation-delay:0ms; } p.meta { animation-delay:30ms; }
-section:nth-of-type(1) { animation-delay:60ms; } section:nth-of-type(2) { animation-delay:100ms; }
-section:nth-of-type(3) { animation-delay:140ms; } section:nth-of-type(4) { animation-delay:180ms; }
-section:nth-of-type(5) { animation-delay:220ms; } section:nth-of-type(6) { animation-delay:260ms; }
+.rise { opacity:0; transform:translateY(6px); animation:rise 400ms var(--ease) forwards; }
+header.top { animation-delay:0ms; }
+.meta { animation-delay:40ms; }
+.priority { animation-delay:70ms; }
+.tiles { animation-delay:110ms; }
+section:nth-of-type(1) { animation-delay:150ms; }
+section:nth-of-type(2) { animation-delay:190ms; }
+section:nth-of-type(3) { animation-delay:230ms; }
+section:nth-of-type(4) { animation-delay:270ms; }
+section:nth-of-type(5) { animation-delay:310ms; }
 @keyframes rise { to { opacity:1; transform:translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
-  section, header.top, p.meta { animation:fade 200ms ease forwards; transform:none; }
+  .rise { animation:fade 200ms ease forwards; transform:none; }
   @keyframes fade { to { opacity:1; } }
   .btn, summary::before { transition:none !important; }
 }
 
-header.top { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-bottom:4px; }
-h1 { font-size:1.3rem; font-weight:650; letter-spacing:-.02em; }
-.pill { display:inline-flex; align-items:center; gap:6px; font-size:.78rem; font-weight:600;
-  padding:4px 11px; border-radius:999px; }
+header.top {
+  display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-bottom:6px;
+}
+h1 {
+  font-family:var(--display); font-size:1.55rem; font-weight:550;
+  letter-spacing:-.025em; line-height:1.15;
+}
+.pill {
+  display:inline-flex; align-items:center; gap:6px; font-size:.78rem; font-weight:650;
+  padding:5px 12px; border-radius:999px;
+}
 .pill svg { flex:none; }
 .pill.ok { color:var(--good); background:var(--good-bg); }
 .pill.err { color:var(--bad); background:var(--bad-bg); }
-.meta { color:var(--ink2); font-size:.82rem; margin-bottom:28px; }
+.meta { color:var(--ink2); font-size:.84rem; margin-bottom:22px; }
 
-.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
-.tile { background:var(--card); border:1px solid var(--line); border-radius:14px;
-  padding:15px 17px 13px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:1px; }
-.tile .n { font-size:1.75rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.03em; }
-.tile .l { color:var(--ink2); font-size:.76rem; line-height:1.4; letter-spacing:.005em; }
-.tile.pri { background:var(--accent-soft); border-color:transparent; }
-.tile.pri .n { color:var(--accent); }
+.priority {
+  background:var(--accent-soft); border:1px solid transparent;
+  border-radius:calc(var(--radius) + 2px); padding:18px 20px; margin-bottom:16px;
+}
+.priority h2 {
+  margin:0 0 10px; font-family:var(--display); font-size:1.15rem;
+  font-weight:550; letter-spacing:-.02em; color:var(--ink);
+  text-transform:none; display:flex; align-items:center; gap:8px;
+}
+.priority .count {
+  background:var(--accent); color:#fff; font-family:var(--font);
+}
+@media (prefers-color-scheme: dark) {
+  .priority .count { color:#062016; }
+}
+.priority .empty {
+  border-style:dashed; border-color:color-mix(in srgb, var(--accent) 25%, var(--line2));
+  background:transparent;
+}
 
-h2 { display:flex; align-items:center; gap:8px; font-size:.78rem; margin:36px 0 10px;
-  color:var(--ink2); text-transform:uppercase; letter-spacing:.07em; font-weight:600; }
-.count { color:var(--ink2); background:var(--card2); border-radius:999px;
-  font-size:.72rem; padding:1px 8px; font-variant-numeric:tabular-nums; font-weight:600; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:8px; }
+.tile {
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px 15px 12px; display:flex; flex-direction:column; gap:2px;
+}
+.tile .n {
+  font-size:1.7rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.03em;
+}
+.tile .l { color:var(--ink2); font-size:.76rem; line-height:1.35; }
+.tile.hot .n { color:var(--accent); }
+
+h2.sec {
+  display:flex; align-items:center; gap:8px; font-size:.74rem; margin:28px 0 10px;
+  color:var(--ink3); text-transform:uppercase; letter-spacing:.08em; font-weight:650;
+}
+.count {
+  color:var(--ink2); background:var(--surface2); border-radius:999px;
+  font-size:.72rem; padding:1px 8px; font-variant-numeric:tabular-nums; font-weight:650;
+}
 
 ul.list { list-style:none; display:flex; flex-direction:column; gap:8px; padding:0; }
-.item { background:var(--card); border:1px solid var(--line); border-radius:12px;
-  padding:12px 15px; box-shadow:var(--shadow); overflow-wrap:anywhere; }
+.item {
+  background:var(--surface); border:1px solid var(--line); border-radius:12px;
+  padding:12px 15px; overflow-wrap:anywhere;
+}
 .item .head { display:flex; align-items:flex-start; gap:10px; }
 .item .head svg { flex:none; margin-top:2px; width:16px; height:16px; }
 .item.good .head svg { color:var(--good); }
@@ -84,32 +146,46 @@ ul.list { list-style:none; display:flex; flex-direction:column; gap:8px; padding
 .item.bad  .head svg { color:var(--bad); }
 .item .txt { flex:1; font-size:.9rem; color:var(--ink); }
 
-.btn { display:inline-flex; align-items:center; gap:6px; margin-top:9px; margin-right:8px;
-  font-size:.82rem; font-weight:600; text-decoration:none; color:var(--ink);
+.btn {
+  display:inline-flex; align-items:center; gap:6px; margin-top:9px; margin-right:8px;
+  font-size:.82rem; font-weight:650; text-decoration:none; color:var(--ink);
   border:1px solid var(--line2); border-radius:9px; padding:6px 12px; min-height:32px;
-  cursor:pointer; background:var(--card);
-  transition:border-color 200ms var(--ease), background-color 200ms var(--ease), transform 160ms var(--ease); }
-.btn:hover { border-color:var(--ink2); text-decoration:none; }
+  cursor:pointer; background:var(--surface);
+  transition:border-color 200ms var(--ease), background-color 200ms var(--ease), transform 160ms var(--ease);
+}
+.btn:hover { border-color:var(--ink2); text-decoration:none; background:var(--surface2); }
 .btn:active { transform:scale(0.97); }
 .btn svg { color:var(--ink2); }
 
 details { margin-top:8px; }
-summary { display:inline-flex; align-items:center; gap:5px; cursor:pointer; color:var(--ink2);
-  font-size:.82rem; font-weight:600; padding:5px 2px; user-select:none; list-style:none;
-  transition:color 200ms var(--ease); }
+summary {
+  display:inline-flex; align-items:center; gap:5px; cursor:pointer; color:var(--ink2);
+  font-size:.82rem; font-weight:650; padding:5px 2px; user-select:none; list-style:none;
+  transition:color 200ms var(--ease);
+}
 summary::-webkit-details-marker { display:none; }
-summary::before { content:""; width:12px; height:12px; flex:none;
-  background:currentColor; transition:transform 200ms var(--ease);
+summary::before {
+  content:""; width:12px; height:12px; flex:none; background:currentColor;
+  transition:transform 200ms var(--ease);
   -webkit-mask:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>') center/contain no-repeat;
-  mask:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>') center/contain no-repeat; }
+  mask:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>') center/contain no-repeat;
+}
 details[open] summary::before { transform:rotate(90deg); }
 summary:hover { color:var(--ink); }
-blockquote { border-left:2px solid var(--line2); background:var(--card2); border-radius:0 10px 10px 0;
-  padding:10px 14px; margin-top:8px; color:var(--ink2); font-size:.88rem; line-height:1.6; max-width:66ch; }
-.empty { color:var(--ink2); font-size:.88rem;
-  background:transparent; border:1px dashed var(--line2); border-radius:12px; padding:11px 15px; }
-footer { margin-top:44px; color:var(--ink2); font-size:.8rem;
-  border-top:1px solid var(--line); padding-top:16px; line-height:1.9; }
+blockquote {
+  border-left:2px solid var(--line2); background:var(--surface2); border-radius:0 10px 10px 0;
+  padding:10px 14px; margin-top:8px; color:var(--ink2); font-size:.88rem; line-height:1.6; max-width:66ch;
+}
+.empty {
+  color:var(--ink2); font-size:.88rem;
+  background:transparent; border:1px dashed var(--line2); border-radius:12px; padding:14px 16px;
+}
+footer {
+  margin-top:44px; color:var(--ink3); font-size:.8rem;
+  border-top:1px solid var(--line); padding-top:16px; line-height:1.9;
+}
+.local-only { display:none; }
+html.is-local .local-only { display:inline; }
 """
 
 # Lucide-style inline SVG icons (stroke, 24 viewBox, sized 18)
@@ -143,19 +219,25 @@ def _card(entry, tone, icon):
         text = DRAFT_LINK_RE.sub("", text).strip()
     out = [f'<li class="item {tone}"><div class="head">{_I[icon]}<p class="txt">{_esc(text)}</p></div>']
     if link:
-        out.append(f'<a class="btn" href="{_esc(link)}">{_I["mail"]}Open draft in Gmail</a>')
+        out.append(f'<a class="btn" href="{_esc(link)}" target="_blank" rel="noopener">{_I["mail"]}Open draft in Gmail</a>')
     if body:
         out.append(f'<details><summary>Read draft body</summary><blockquote>{_esc(body)}</blockquote></details>')
     out.append("</li>")
     return "".join(out)
 
 
+def _list(entries, tone, item_icon, empty):
+    if not entries:
+        return f'<p class="empty">{empty}</p>'
+    rows = "".join(_card(e, tone, item_icon) for e in entries)
+    return f'<ul class="list">{rows}</ul>'
+
+
 def _sec(title, icon, entries, tone, item_icon, empty):
     n = len(entries or [])
-    rows = ("".join(_card(e, tone, item_icon) for e in entries)
-            if entries else f'<p class="empty">{empty}</p>')
-    body = f'<ul class="list">{rows}</ul>' if entries else rows
-    return (f'<section aria-label="{_esc(title)}"><h2>{_I[icon]}{_esc(title)}'
+    body = _list(entries, tone, item_icon, empty)
+    return (f'<section class="rise" aria-label="{_esc(title)}">'
+            f'<h2 class="sec">{_I[icon]}{_esc(title)}'
             f'<span class="count">{n}</span></h2>{body}</section>')
 
 
@@ -183,20 +265,33 @@ def render(contacts, report, llm_calls, dry_run=False):
     ok = not errors
     status_pill = (f'<span class="pill ok">{_I["check"]}All clear</span>' if ok
                    else f'<span class="pill err">{_I["alert"]}{len(errors)} error{"s" if len(errors) != 1 else ""}</span>')
+    needs_n = len(needs_you)
+    needs_block = (
+        f'<div class="priority rise" aria-label="Needs you">'
+        f'<h2>{_I["user"]}Needs you <span class="count">{needs_n}</span></h2>'
+        f'{_list(needs_you, "warn", "alert", "Nothing needs you right now — you are caught up.")}'
+        f'</div>'
+    )
 
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EmailCRM Autopilot</title><style>{CSS}</style></head>
+<title>EmailCRM Autopilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@450;550;650;700&family=Fraunces:opsz,wght@9..144,550;9..144,650&display=swap" rel="stylesheet">
+<style>{CSS}</style></head>
 <body>
-<header class="top">
+<header class="top rise">
   <h1>EmailCRM Autopilot</h1>
   {status_pill}
 </header>
-<p class="meta">Last run {now}{' · DRY RUN' if dry_run else ''} · runs daily 7:04 AM · {llm_calls} LLM calls this run · drafts only, never sends</p>
+<p class="meta rise">Last run {now}{' · DRY RUN' if dry_run else ''} · daily 7:04 AM · {llm_calls} LLM calls · drafts only, never sends</p>
 
-<section aria-label="Pipeline totals" class="tiles">
-  <div class="tile pri"><span class="n">{len(needs_you)}</span><span class="l">items need you</span></div>
+{needs_block}
+
+<section class="tiles rise" aria-label="Pipeline totals">
+  <div class="tile hot"><span class="n">{needs_n}</span><span class="l">items need you</span></div>
   <div class="tile"><span class="n">{len(drafts_today)}</span><span class="l">drafts created today</span></div>
   <div class="tile"><span class="n">{counts.get('replied', 0) + counts.get('converted', 0)}</span><span class="l">open conversations</span></div>
   <div class="tile"><span class="n">{counts.get('bounced', 0)}</span><span class="l">bounces unresolved</span></div>
@@ -204,18 +299,22 @@ def render(contacts, report, llm_calls, dry_run=False):
   <div class="tile"><span class="n">{backlog}</span><span class="l">cold backlog (paused)</span></div>
 </section>
 
-{_sec("Needs you", "user", needs_you, "warn", "alert", "Nothing needs you right now.")}
 {_sec("Drafts waiting in Gmail — review, then send", "mail", drafts_today, "good", "check", "No drafts created today.")}
 {_sec("Bounce handling", "zap", bounce_rows, "warn", "alert", "No bounce activity today.")}
 {_sec("New prospect briefs", "search", pr.get("briefs", []), "good", "check", "No new briefs today.")}
 {_sec("Errors", "bug", errors, "bad", "x", "No errors.")}
 
-<footer>
+<footer class="rise">
   Status counts: {_esc(counts)}<br>
-  <a href="file://{config.DIGEST_DIR}/{date.today().isoformat()}.md">Today's markdown digest</a> ·
-  <a href="file://{config.QUEUE_PROSPECTS}">Prospect brief folder</a> ·
-  <a href="file://{config.LOG_DIR}">Run logs</a>
+  <a href="https://mail.google.com/mail/u/0/#drafts">Gmail drafts</a>
+  <span class="local-only"> ·
+  <a href="file://{config.DIGEST_DIR}/{date.today().isoformat()}.md">Today's digest</a> ·
+  <a href="file://{config.QUEUE_PROSPECTS}">Prospect briefs</a> ·
+  <a href="file://{config.LOG_DIR}">Run logs</a></span>
 </footer>
+<script>
+if (location.protocol === "file:") document.documentElement.classList.add("is-local");
+</script>
 </body></html>"""
 
     path = config.ROOT / "dashboard.html"
