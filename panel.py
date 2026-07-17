@@ -372,7 +372,7 @@ footer.links {
 .subj-edit:focus-visible, .email-edit:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .thread-link { font-size:.8rem; font-weight:650; margin:4px 0 0; display:inline-block; }
 
-.filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+.filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
 .chip {
   font:inherit; font-weight:650; font-size:.78rem; padding:6px 12px; min-height:32px;
   border-radius:999px; background:var(--surface); color:var(--ink2);
@@ -381,6 +381,38 @@ footer.links {
 .chip:hover { color:var(--ink); border-color:var(--line2); }
 .chip.active { background:var(--accent-soft); color:var(--accent); border-color:transparent; }
 .qsplit { color:var(--ink3); font-size:.82rem; margin-left:8px; font-weight:550; }
+.qsearch {
+  font:inherit; font-size:.84rem; color:var(--ink); background:var(--surface);
+  border:1px solid var(--line); border-radius:999px; padding:7px 14px; min-width:160px; flex:1;
+  max-width:240px;
+}
+.qsearch:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+.pipeline {
+  display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;
+}
+.pipeline .step {
+  font-size:.72rem; font-weight:650; padding:5px 10px; border-radius:999px;
+  background:var(--surface); color:var(--ink3); border:1px solid var(--line);
+}
+.pipeline .step.done { color:var(--good); background:var(--good-bg); border-color:transparent; }
+.pipeline .step.live { color:var(--accent); background:var(--accent-soft); border-color:transparent; }
+
+.help-overlay {
+  position:fixed; inset:0; background:rgba(20,32,26,.45); z-index:50;
+  display:grid; place-items:center; padding:24px;
+}
+.help-card {
+  background:var(--surface); border:1px solid var(--line); border-radius:16px;
+  padding:22px 24px; width:min(420px, 100%); max-height:80vh; overflow:auto;
+}
+.help-card h2 { font-family:var(--display); font-size:1.2rem; margin-bottom:12px; }
+.help-card dl { display:grid; grid-template-columns:auto 1fr; gap:8px 14px; font-size:.88rem; }
+.help-card dt .kbd { margin-right:2px; }
+.help-card dd { color:var(--ink2); }
+.help-card .close { margin-top:16px; width:100%; background:var(--accent); color:var(--accent-ink); }
+
+.empty .cta { margin-top:12px; background:var(--accent); color:var(--accent-ink); padding:9px 16px; }
 
 .urgency-banner {
   background:var(--warn-bg); color:var(--warn); border-radius:10px;
@@ -491,7 +523,7 @@ footer.links {
   <section class="panel active" id="panel-approvals" role="tabpanel" aria-labelledby="tab-approvals">
     <div class="section-head">
       <h2>Approval queue <span class="qsplit" id="qsplit"></span></h2>
-      <p class="hint">Focus <span class="kbd">j</span>/<span class="kbd">k</span> · <span class="kbd">a</span> approve (confirm) · <span class="kbd">s</span> skip · <span class="kbd">o</span> edit body</p>
+      <p class="hint">Focus <span class="kbd">j</span>/<span class="kbd">k</span> · <span class="kbd">?</span> shortcuts</p>
     </div>
     <p class="urgency-banner" id="urgency-banner" hidden>
       <span id="urgency-text"></span>
@@ -501,6 +533,7 @@ footer.links {
       <button type="button" class="chip active" data-filter="all">All</button>
       <button type="button" class="chip" data-filter="reply">Replies</button>
       <button type="button" class="chip" data-filter="outreach">Outreach</button>
+      <input class="qsearch" id="qsearch" type="search" placeholder="Search name, company…" autocomplete="off">
     </div>
     <ul id="queue"></ul>
     <details class="done-today" id="done-today">
@@ -548,6 +581,7 @@ footer.links {
 
   <section class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" hidden>
     <div class="section-head"><h2>Live feed</h2></div>
+    <div class="pipeline" id="pipeline" aria-label="Pipeline stages"></div>
     <ul id="feed" aria-live="polite"><li>waiting for status…</li></ul>
   </section>
 
@@ -571,6 +605,22 @@ footer.links {
   </footer>
 </main>
 <div class="toast-wrap" id="toasts" aria-live="polite"></div>
+<div class="help-overlay" id="help" hidden>
+  <div class="help-card" role="dialog" aria-labelledby="help-title">
+    <h2 id="help-title">Keyboard shortcuts</h2>
+    <dl>
+      <dt><span class="kbd">1</span>–<span class="kbd">4</span></dt><dd>Approvals / Overview / Activity / Report</dd>
+      <dt><span class="kbd">j</span> / <span class="kbd">k</span></dt><dd>Next / previous queue item</dd>
+      <dt><span class="kbd">a</span></dt><dd>Approve focused (asks to confirm)</dd>
+      <dt><span class="kbd">s</span></dt><dd>Skip focused for 7 days</dd>
+      <dt><span class="kbd">o</span></dt><dd>Toggle edit body</dd>
+      <dt><span class="kbd">/</span></dt><dd>Focus search</dd>
+      <dt><span class="kbd">?</span></dt><dd>This help</dd>
+      <dt><span class="kbd">Esc</span></dt><dd>Close help</dd>
+    </dl>
+    <button type="button" class="close" id="help-close">Close</button>
+  </div>
+</div>
 
 <script>
 const el = id => document.getElementById(id);
@@ -586,11 +636,17 @@ let focusId = null;
 let queueAll = [];
 let queueItems = [];
 let queueFilter = "all";
+let queueSearch = "";
 let lastQueueSig = "";
 let wasRunning = false;
 let needsCount = 0;
 let runStage = "";
 const saveTimers = {};
+
+const PIPELINE_STAGES = [
+  ["inbox", "Inbox"], ["reply", "Reply"], ["bounce", "Bounce"],
+  ["scout", "Scout"], ["organize", "Organize"], ["digest", "Digest"],
+];
 
 function showPanel(name) {
   document.querySelectorAll(".tab").forEach(t => {
@@ -628,6 +684,16 @@ document.querySelectorAll("#qfilters .chip").forEach(c => {
     loadQueue();
   });
 });
+el("qsearch").addEventListener("input", () => {
+  queueSearch = el("qsearch").value.trim().toLowerCase();
+  lastQueueSig = "";
+  loadQueue();
+});
+
+el("help-close").addEventListener("click", () => { el("help").hidden = true; });
+el("help").addEventListener("click", ev => {
+  if (ev.target === el("help")) el("help").hidden = true;
+});
 
 function updateUrgencyBanner() {
   const banner = el("urgency-banner");
@@ -649,9 +715,37 @@ function sortQueue(q) {
 }
 
 function filterQueue(q) {
-  if (queueFilter === "reply") return q.filter(i => i.kind === "reply");
-  if (queueFilter === "outreach") return q.filter(i => i.kind === "outreach");
-  return q;
+  let out = q;
+  if (queueFilter === "reply") out = out.filter(i => i.kind === "reply");
+  else if (queueFilter === "outreach") out = out.filter(i => i.kind === "outreach");
+  if (queueSearch) {
+    out = out.filter(i => {
+      const hay = [i.name, i.company, i.email, i.subject, i.track, i.why]
+        .map(x => String(x || "").toLowerCase()).join(" ");
+      return hay.includes(queueSearch);
+    });
+  }
+  return out;
+}
+
+function updatePipeline(stageLabel, running) {
+  const pipe = el("pipeline");
+  const cur = String(stageLabel || "").toLowerCase();
+  const order = PIPELINE_STAGES.map(([k]) => k);
+  let hit = -1;
+  for (let i = 0; i < order.length; i++) {
+    if (cur.includes(order[i])) { hit = i; break; }
+  }
+  pipe.innerHTML = PIPELINE_STAGES.map(([key, label], i) => {
+    let cls = "step";
+    if (running && hit >= 0) {
+      if (i < hit) cls += " done";
+      else if (i === hit) cls += " live";
+    } else if (!running && hit < 0) {
+      /* idle */
+    }
+    return '<span class="' + cls + '">' + label + '</span>';
+  }).join("");
 }
 
 function contextHtml(item) {
@@ -913,6 +1007,7 @@ async function poll() {
     if (!(s.events || []).length) feed.innerHTML = "<li>no events yet — hit Run now</li>";
     el("run").disabled = !!s.running;
     el("stop").disabled = !s.running;
+    updatePipeline(s.stage, !!s.running);
     if (!wasRunning && s.running) showPanel("activity");
     if (wasRunning && !s.running) {
       el("dash").src = "/dashboard?t=" + Date.now();
@@ -960,11 +1055,18 @@ async function loadQueue() {
 
     const ul = el("queue");
     if (!filtered.length) {
-      const msg = queueAll.length && queueFilter !== "all"
-        ? "No " + queueFilter + " items in the queue."
-        : "Nothing waiting — approve drafts here after a run.";
-      ul.innerHTML = '<li class="empty"><strong>Nothing waiting</strong>' + esc(msg) + '</li>';
+      const searching = queueSearch || queueFilter !== "all";
+      ul.innerHTML = searching
+        ? '<li class="empty"><strong>No matches</strong>Try another filter or clear search.</li>'
+        : '<li class="empty"><strong>Nothing waiting</strong>Run triage to sync inbox and draft replies.' +
+          '<br><button type="button" class="cta" id="empty-triage">Start Triage</button></li>';
       focusId = null;
+      el("empty-triage")?.addEventListener("click", () => {
+        runStage = "triage";
+        document.querySelectorAll("#run-modes .chip").forEach(x =>
+          x.classList.toggle("active", x.dataset.stage === "triage"));
+        el("run").click();
+      });
       return;
     }
     ul.innerHTML = "";
@@ -1006,6 +1108,7 @@ async function loadQueue() {
             '<button type="button" data-a="skip" data-until="7" data-id="' + esc(item.id) + '">Skip 7d</button>' +
             '<button type="button" data-a="skip" data-until="forever" data-id="' + esc(item.id) + '">Skip ∞</button>' +
           '</span>' +
+          '<button type="button" class="skip" data-copy="' + esc(item.id) + '">Copy body</button>' +
         '</div>';
       li.addEventListener("click", ev => {
         if (ev.target.closest("button, a, summary, details, input, [contenteditable]")) return;
@@ -1030,15 +1133,39 @@ async function loadQueue() {
         ? { skipUntil: until === "forever" ? "forever" : Number(until) }
         : {});
     }));
+    ul.querySelectorAll("button[data-copy]").forEach(b => b.addEventListener("click", async () => {
+      const li = b.closest(".q-item");
+      const html = li.querySelector(".body-edit")?.innerHTML || "";
+      const text = li.querySelector(".body-edit")?.innerText || "";
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([text], { type: "text/plain" }),
+          })
+        ]);
+      } catch (_) {
+        try { await navigator.clipboard.writeText(text); } catch (__) {}
+      }
+      toast("Body copied");
+    }));
     if (!filtered.some(i => i.id === focusId)) focusId = filtered[0]?.id || null;
     setFocus(focusedIndex());
   } catch (_) {}
 }
 
 document.addEventListener("keydown", ev => {
-  if (ev.target.matches("input, textarea, select, [contenteditable]") || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key === "Escape" && !el("help").hidden) {
+    el("help").hidden = true; return;
+  }
+  if (ev.target.matches("input, textarea, select, [contenteditable]") || ev.metaKey || ev.ctrlKey || ev.altKey) {
+    if (ev.key === "Escape" && ev.target === el("qsearch")) { el("qsearch").blur(); }
+    return;
+  }
   const approvalsOn = el("panel-approvals").classList.contains("active");
   const key = ev.key.toLowerCase();
+  if (key === "?" || (ev.shiftKey && key === "/")) { ev.preventDefault(); el("help").hidden = false; return; }
+  if (key === "/") { ev.preventDefault(); showPanel("approvals"); el("qsearch").focus(); return; }
   if (key === "1") { showPanel("approvals"); return; }
   if (key === "2") { showPanel("overview"); return; }
   if (key === "3") { showPanel("activity"); return; }
