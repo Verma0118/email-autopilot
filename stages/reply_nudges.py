@@ -11,6 +11,7 @@ import config
 import crm
 import gmail
 import llm
+import status
 import validators
 
 NUDGE_COOLDOWN_DAYS = 6
@@ -80,6 +81,9 @@ def run(contacts, report, cap, log, dry_run=False):
         candidates.append(c)
 
     for c in candidates[:cap]:
+        status.check_stop()
+        status.update(detail=f"checking thread: {c['name']} ({c['company']})",
+                      stream=config.STREAM_LABELS.get(c.get("email_type"), c.get("email_type")))
         try:
             thread, last_us, subject = _thread_text(c["gmail_thread_id"])
         except Exception as e:

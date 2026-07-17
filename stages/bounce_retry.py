@@ -3,6 +3,7 @@ import config
 import crm
 import gmail
 import llm
+import status
 import validators
 
 
@@ -25,6 +26,9 @@ def run(contacts, report, cap, log, dry_run=False):
             if not (c.get("autopilot", {}).get("bounce_retry") or {}).get("status")][: cap]
 
     for c in todo:
+        status.check_stop()
+        status.update(detail=f"researching bounce fix: {c['name']} ({c['company']})",
+                      stream=config.STREAM_LABELS.get(c.get("email_type"), c.get("email_type")))
         try:
             result = llm.call(_render(c), use_exa=True, max_turns=12)
         except llm.LLMError as e:

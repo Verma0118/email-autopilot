@@ -10,6 +10,7 @@ import re
 import subprocess
 
 import config
+import status
 
 _calls_made = 0
 llm_down = False
@@ -36,10 +37,14 @@ def _extract_json(text):
 def call(prompt, use_exa=False, max_turns=8):
     """Run claude -p, return parsed JSON dict. Raises LLMError."""
     global _calls_made, llm_down
+    status.check_stop()
     if llm_down:
         raise LLMError("LLM marked down for this run")
     if _calls_made >= config.LLM_CALL_BUDGET:
         raise LLMError(f"call budget ({config.LLM_CALL_BUDGET}) exhausted")
+    if status.over_budget():
+        llm_down = True
+        raise LLMError("session token budget (100%) reached, LLM stages stopped")
     _calls_made += 1
 
     mcp_config = config.MCP_EXA if use_exa else config.MCP_EMPTY
@@ -75,6 +80,8 @@ def call(prompt, use_exa=False, max_turns=8):
             raise LLMError(f"auth failure, skipping all LLM stages this run: {err}")
         raise LLMError(f"claude exited {proc.returncode}, no JSON envelope: {err}")
 
+    if isinstance(envelope.get("usage"), dict):
+        status.add_usage(envelope["usage"])
     if envelope.get("is_error"):
         result_text = str(envelope.get("result", ""))
         if envelope.get("api_error_status") == 429 or "session limit" in result_text.lower():

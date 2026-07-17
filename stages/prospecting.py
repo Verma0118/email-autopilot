@@ -8,6 +8,7 @@ import yaml
 import config
 import crm
 import llm
+import status
 
 
 def _norm(name, company):
@@ -91,6 +92,9 @@ def run(contacts, report, cap, log, dry_run=False):
         key = _norm(candidate.get("name", ""), candidate.get("company", ""))
         if not key or key in crm_keys or key in ledger:
             return
+        status.check_stop()
+        status.update(detail=f"researching prospect: {candidate.get('name')} ({candidate.get('company')})",
+                      stream="startup discovery")
         try:
             brief = llm.call(_brief_prompt(candidate, segment_name), use_exa=True, max_turns=12)
         except llm.LLMError as e:
@@ -117,6 +121,7 @@ def run(contacts, report, cap, log, dry_run=False):
     segments = icp.get("segments", [])
     if segments and written < cap and not llm.llm_down:
         seg = segments[date.today().toordinal() % len(segments)]
+        status.update(detail=f"scraping for new contacts: {seg['name']} segment", stream="startup discovery")
         template = (config.PROMPT_DIR / "prospect_discovery.md").read_text()
         prompt = template.replace("<<SEGMENT_NAME>>", seg["name"]).replace(
             "<<SEGMENT_BRIEF>>", seg["brief"])

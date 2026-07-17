@@ -12,6 +12,7 @@ from datetime import date, datetime
 import config
 import crm
 import gmail
+import status
 
 
 def _expected_subject(contact):
@@ -35,6 +36,7 @@ def run(contacts, report, dry_run=False):
     })
 
     # a) sent detection ------------------------------------------------
+    status.update(detail="checking Sent for manually sent drafts")
     for c in crm.eligible_for(contacts, "sent_detection"):
         if not c.get("email"):
             continue
@@ -93,6 +95,7 @@ def run(contacts, report, dry_run=False):
         crm.save(contacts, dry_run)
 
     # c) reply detection ----------------------------------------------
+    status.update(detail="scanning inbox for replies")
     OOO_RE = re.compile(r"automatic reply|auto[- ]?reply|out of (the )?office|autoreply", re.IGNORECASE)
     watch = [c for c in crm.eligible_for(contacts, "reply_detection") if c.get("email")]
     email_map = {c["email"].lower(): c for c in watch}
@@ -123,6 +126,7 @@ def run(contacts, report, dry_run=False):
                 crm.save(contacts, dry_run)
 
     # d) bounce detection ----------------------------------------------
+    status.update(detail="scanning for bounces")
     seen = set()
     if config.SEEN_BOUNCES.exists():
         seen = set(json.loads(config.SEEN_BOUNCES.read_text()))

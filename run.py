@@ -26,6 +26,7 @@ import config
 import crm
 import gmail
 import llm
+import status
 
 
 def notify(text):
@@ -96,6 +97,7 @@ def main():
     report = {"fatal": []}
     log = make_logger(args.dry_run)
     log({"action": "run_start", "stage": args.stage or "all"})
+    status.begin(args.stage or "all")
     try:
         if not args.dry_run:
             crm.backup()
@@ -108,36 +110,38 @@ def main():
         def want(s):
             return args.stage in (None, s)
 
-        if want("sync"):
+        def guarded(name, fn):
             try:
-                inbox_sync.run(contacts, report, dry_run=args.dry_run)
+                status.check_stop()
+                status.update(stage=name, detail="starting")
+                fn()
+            except status.Stopped:
+                report.setdefault("stopped", True)
+                report["fatal"].append(f"{name}: stopped from panel")
+                raise
             except Exception:
-                report["fatal"].append(f"inbox_sync crashed: {traceback.format_exc(limit=3)}")
-        if want("nudge"):
-            try:
-                reply_nudges.run(contacts, report, args.cap or config.NUDGE_DAILY_CAP,
-                                 log, dry_run=args.dry_run)
-            except Exception:
-                report["fatal"].append(f"reply_nudges crashed: {traceback.format_exc(limit=3)}")
-        if want("bounce"):
-            try:
-                bounce_retry.run(contacts, report, args.cap or config.BOUNCE_DAILY_CAP,
-                                 log, dry_run=args.dry_run)
-            except Exception:
-                report["fatal"].append(f"bounce_retry crashed: {traceback.format_exc(limit=3)}")
-        if args.stage == "followup" or (args.stage is None and config.COLD_FOLLOWUPS_ENABLED):
-            try:
-                followups.run(contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP,
-                              log, dry_run=args.dry_run)
-            except Exception:
-                report["fatal"].append(f"followups crashed: {traceback.format_exc(limit=3)}")
-        if want("prospect"):
-            try:
-                prospecting.run(contacts, report, args.cap or config.PROSPECT_DAILY_CAP,
-                                log, dry_run=args.dry_run)
-            except Exception:
-                report["fatal"].append(f"prospecting crashed: {traceback.format_exc(limit=3)}")
+                report["fatal"].append(f"{name} crashed: {traceback.format_exc(limit=3)}")
 
+        try:
+            if want("sync"):
+                guarded("inbox sync", lambda: inbox_sync.run(
+                    contacts, report, dry_run=args.dry_run))
+            if want("nudge"):
+                guarded("reply nudges", lambda: reply_nudges.run(
+                    contacts, report, args.cap or config.NUDGE_DAILY_CAP, log, dry_run=args.dry_run))
+            if want("bounce"):
+                guarded("bounce retry", lambda: bounce_retry.run(
+                    contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log, dry_run=args.dry_run))
+            if args.stage == "followup" or (args.stage is None and config.COLD_FOLLOWUPS_ENABLED):
+                guarded("cold follow-ups", lambda: followups.run(
+                    contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log, dry_run=args.dry_run))
+            if want("prospect"):
+                guarded("prospecting", lambda: prospecting.run(
+                    contacts, report, args.cap or config.PROSPECT_DAILY_CAP, log, dry_run=args.dry_run))
+        except status.Stopped:
+            pass  # fall through to digest with what we have
+
+        status.update(stage="digest", detail="writing digest + dashboard")
         path, summary = digest.run(contacts, report, llm.calls_made(), dry_run=args.dry_run)
         try:
             import publish
@@ -146,9 +150,11 @@ def main():
         except Exception:
             report["fatal"].append(f"publish crashed: {traceback.format_exc(limit=2)}")
         log({"action": "run_end", "digest": str(path), "summary": summary})
+        status.end(summary + (" — STOPPED EARLY" if report.get("stopped") else ""))
         print(f"digest: {path}\n{summary}")
     finally:
         release_lock()
+        status.STOP_FLAG.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import config
 import crm
 import gmail
 import llm
+import status
 import validators
 
 
@@ -49,6 +50,9 @@ def run(contacts, report, cap, log, dry_run=False):
     template = _load_prompt()
 
     for c in candidates:
+        status.check_stop()
+        status.update(detail=f"drafting follow-up: {c['name']} ({c['company']})",
+                      stream=config.STREAM_LABELS.get(c.get("email_type"), c.get("email_type")))
         expected_subject = "Re: " + config.FIXED_SUBJECTS.get(c.get("email_type"), "")
 
         # crash repair: a matching reply draft already exists in Gmail

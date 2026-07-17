@@ -40,6 +40,14 @@ COLD_FOLLOWUPS_ENABLED = False
 LLM_CALL_BUDGET = 40
 LLM_TIMEOUT = 300
 
+# Self-metered token budget for autopilot LLM calls (rolling 5h window).
+# Anthropic does not expose the real Pro session percentage; this meters
+# the autopilot's own consumption only. Warn at 60%, hard-stop LLM at 100%.
+SESSION_TOKEN_BUDGET = 200_000
+TOKEN_WARN_PCT = 0.60
+
+PANEL_PORT = 8787
+
 FOLLOW_UP_DAYS = 7
 
 # Fixed subject lines per email type (agent-rules.md section 2). Never vary.
@@ -48,6 +56,15 @@ FIXED_SUBJECTS = {
     "networking_warm": "Coffee Chat Request | Aarav Verma, Fellow Illini",
     "cold_outreach": "Coffee Chat Request | Aarav Verma, Fellow Illini",
     "cold_outreach_not_alum": "Coffee Chat Request University of Illinois Student | Aarav Verma",
+}
+
+# Friendly stream names shown in the panel, keyed by email_type
+STREAM_LABELS = {
+    "startup_discovery": "startup discovery",
+    "networking_warm": "internship outreach",
+    "cold_outreach": "internship outreach",
+    "follow_up": "internship outreach",
+    "nobe_pd_outreach": "NOBE",
 }
 
 EXA_TOOLS = [
