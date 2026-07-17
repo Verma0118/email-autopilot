@@ -155,9 +155,12 @@ button:focus-visible, .tab:focus-visible, a:focus-visible, summary:focus-visible
   border-radius:999px; padding:5px 11px; max-width:280px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.actions { display:flex; gap:8px; }
+.actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 #run { background:var(--accent); color:var(--accent-ink); padding:9px 18px; }
 #stop { background:var(--bad-bg); color:var(--bad); padding:9px 16px; }
+.run-modes { display:flex; gap:4px; }
+.run-modes .chip { padding:5px 10px; min-height:30px; font-size:.72rem; }
+.run-modes .chip.active { background:var(--accent); color:var(--accent-ink); border-color:transparent; }
 
 .tabs {
   display:flex; gap:2px; overflow-x:auto; scrollbar-width:none;
@@ -258,9 +261,14 @@ meter { width:100%; height:10px; margin-top:10px; }
 .q-why { color:var(--ink2); font-size:.88rem; margin:4px 0 8px; }
 .q-subject { font-size:.88rem; margin-bottom:6px; }
 .q-subject span { color:var(--ink2); }
-.q-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.q-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
 .q-actions button.approve { background:var(--good-bg); color:var(--good); padding:9px 16px; }
 .q-actions button.skip { background:var(--surface2); color:var(--ink2); padding:9px 16px; }
+.skip-menu { display:inline-flex; gap:4px; flex-wrap:wrap; }
+.skip-menu button {
+  font-size:.72rem; font-weight:650; padding:6px 10px; min-height:30px;
+  background:var(--surface2); color:var(--ink2); border-radius:8px;
+}
 details.preview { margin-top:8px; }
 details.preview summary {
   cursor:pointer; color:var(--ink2); font-size:.84rem; font-weight:650;
@@ -418,6 +426,10 @@ footer.links {
 }
 .done-today .ok { color:var(--good); font-weight:650; }
 .done-today .skip { color:var(--ink3); }
+.done-today button.linkish, .done-today a {
+  color:var(--accent); font-weight:650; background:none; border:0; padding:0;
+  min-height:auto; cursor:pointer; text-decoration:underline; font:inherit;
+}
 
 /* —— toast —— */
 .toast-wrap {
@@ -452,6 +464,12 @@ footer.links {
         <span class="stagechip" id="stagechip">idle</span>
       </div>
       <div class="actions">
+        <div class="run-modes" id="run-modes" title="What to run">
+          <button type="button" class="chip active" data-stage="">Full</button>
+          <button type="button" class="chip" data-stage="triage">Triage</button>
+          <button type="button" class="chip" data-stage="scout">Scout</button>
+          <button type="button" class="chip" data-stage="digest">Digest</button>
+        </div>
         <button id="run" type="button">Run now</button>
         <button id="stop" type="button">Stop</button>
       </div>
@@ -571,6 +589,8 @@ let queueFilter = "all";
 let lastQueueSig = "";
 let wasRunning = false;
 let needsCount = 0;
+let runStage = "";
+const saveTimers = {};
 
 function showPanel(name) {
   document.querySelectorAll(".tab").forEach(t => {
@@ -695,14 +715,17 @@ function draftPayload(id) {
   return out;
 }
 
-async function act(id, action, btn, { confirmApprove = false } = {}) {
+async function act(id, action, btn, { confirmApprove = false, skipUntil = 7 } = {}) {
   if (action === "approve" && confirmApprove) {
     const item = queueItems.find(q => q.id === id);
     const who = item ? (item.name || "this draft") : "this draft";
     if (!window.confirm("Approve draft for " + who + " → create Gmail draft?")) return;
   }
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
-  const payload = action === "approve" ? draftPayload(id) : { id };
+  let payload;
+  if (action === "approve") payload = draftPayload(id);
+  else if (action === "skip") payload = { id, skip_until: skipUntil };
+  else payload = { id };
   const res = await fetch("/" + action, {
     method:"POST",
     headers: { "Content-Type": "application/json" },
@@ -718,20 +741,44 @@ async function act(id, action, btn, { confirmApprove = false } = {}) {
   if (action === "approve") {
     const link = data.draft_link
       || "https://mail.google.com/mail/u/0/#drafts";
-    toast('Draft created. <a href="' + esc(link) + '" target="_blank" rel="noopener">Open in Gmail</a>');
+    const t = toast('Draft created. <a href="' + esc(link) + '" target="_blank" rel="noopener">Open in Gmail</a> · <button type="button" class="linkish">Undo</button>');
+    t.querySelector(".linkish")?.addEventListener("click", () => undoItem(id));
   } else if (action === "skip") {
-    const t = toast('Skipped. <button type="button" class="linkish" data-undo="' + esc(id) + '">Undo</button>');
-    t.querySelector("[data-undo]")?.addEventListener("click", async (ev) => {
-      const b = ev.currentTarget;
-      b.disabled = true; b.textContent = "…";
-      const r = await fetch("/undo", { method:"POST", body: JSON.stringify({ id }) });
-      if (r.ok) { toast("Restored to queue"); loadQueue(); }
-      else toast("Could not undo");
-    });
+    const label = skipUntil === "forever" ? "forever" : (skipUntil + "d");
+    const t = toast('Snoozed ' + label + '. <button type="button" class="linkish">Undo</button>');
+    t.querySelector(".linkish")?.addEventListener("click", () => undoItem(id));
   }
   lastQueueSig = "";
   await loadQueue();
   await loadHistory();
+}
+
+async function undoItem(id) {
+  const r = await fetch("/undo", {
+    method:"POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  let data = {};
+  try { data = await r.json(); } catch (_) {}
+  if (r.ok) {
+    toast(data.undid === "approved" ? "Approval undone — draft deleted" : "Restored to queue");
+    lastQueueSig = "";
+    await loadQueue();
+    await loadHistory();
+  } else toast(esc(data.error || "Could not undo"));
+}
+
+function scheduleSave(id) {
+  clearTimeout(saveTimers[id]);
+  saveTimers[id] = setTimeout(() => {
+    const payload = draftPayload(id);
+    fetch("/save", {
+      method:"POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  }, 600);
 }
 
 async function loadReport() {
@@ -812,14 +859,19 @@ async function loadHistory() {
     ul.innerHTML = rows.map(it => {
       const when = (it.resolved || "").slice(11, 16) || "—";
       const who = esc(it.name) + " · " + esc(it.company);
+      const undo = ' · <button type="button" class="linkish" data-undo="' + esc(it.id) + '">Undo</button>';
       if (it.status === "approved") {
         const link = it.draft_link
-          ? '<a href="' + esc(it.draft_link) + '" target="_blank" rel="noopener">Open draft</a>'
+          ? '<a href="' + esc(it.draft_link) + '" target="_blank" rel="noopener">Open draft</a> · '
           : "";
-        return '<li><span class="ok">Approved</span> ' + who + ' · ' + when + (link ? " · " + link : "") + '</li>';
+        return '<li><span class="ok">Approved</span> ' + who + ' · ' + when + ' · ' + link +
+          '<button type="button" class="linkish" data-undo="' + esc(it.id) + '">Undo</button></li>';
       }
-      return '<li><span class="skip">Skipped</span> ' + who + ' · ' + when + '</li>';
+      const snooze = it.skip_until === "forever" ? " · forever"
+        : (it.skip_until ? " · until " + esc(it.skip_until) : "");
+      return '<li><span class="skip">Skipped</span> ' + who + snooze + ' · ' + when + undo + '</li>';
     }).join("");
+    ul.querySelectorAll("[data-undo]").forEach(b => b.addEventListener("click", () => undoItem(b.dataset.undo)));
   } catch (_) {}
 }
 
@@ -949,7 +1001,11 @@ async function loadQueue() {
           '<p class="edit-hint">Paste is plain text. Edits apply when you approve.</p></details>' +
         '<div class="q-actions">' +
           '<button type="button" class="approve" data-a="approve" data-id="' + esc(item.id) + '">Approve → Gmail draft</button>' +
-          '<button type="button" class="skip" data-a="skip" data-id="' + esc(item.id) + '">Skip</button>' +
+          '<span class="skip-menu">' +
+            '<button type="button" data-a="skip" data-until="3" data-id="' + esc(item.id) + '">Skip 3d</button>' +
+            '<button type="button" data-a="skip" data-until="7" data-id="' + esc(item.id) + '">Skip 7d</button>' +
+            '<button type="button" data-a="skip" data-until="forever" data-id="' + esc(item.id) + '">Skip ∞</button>' +
+          '</span>' +
         '</div>';
       li.addEventListener("click", ev => {
         if (ev.target.closest("button, a, summary, details, input, [contenteditable]")) return;
@@ -957,15 +1013,22 @@ async function loadQueue() {
       });
       ul.appendChild(li);
     });
+    ul.querySelectorAll(".subj-edit, .email-edit").forEach(inp => {
+      inp.addEventListener("input", () => scheduleSave(inp.closest(".q-item").dataset.id));
+    });
     ul.querySelectorAll(".body-edit").forEach(ed => {
       ed.addEventListener("paste", ev => {
         ev.preventDefault();
         const text = (ev.clipboardData || window.clipboardData).getData("text/plain");
         document.execCommand("insertText", false, text);
       });
+      ed.addEventListener("input", () => scheduleSave(ed.closest(".q-item").dataset.id));
     });
     ul.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => {
-      act(b.dataset.id, b.dataset.a, b);
+      const until = b.dataset.until;
+      act(b.dataset.id, b.dataset.a, b, until != null
+        ? { skipUntil: until === "forever" ? "forever" : Number(until) }
+        : {});
     }));
     if (!filtered.some(i => i.id === focusId)) focusId = filtered[0]?.id || null;
     setFocus(focusedIndex());
@@ -990,7 +1053,7 @@ document.addEventListener("keydown", ev => {
   } else if (key === "s") {
     ev.preventDefault();
     const id = queueItems[focusedIndex()]?.id;
-    if (id) act(id, "skip");
+    if (id) act(id, "skip", null, { skipUntil: 7 });
   } else if (key === "o") {
     ev.preventDefault();
     const item = document.querySelectorAll(".q-item")[focusedIndex()];
@@ -999,11 +1062,27 @@ document.addEventListener("keydown", ev => {
   }
 });
 
+document.querySelectorAll("#run-modes .chip").forEach(c => {
+  c.addEventListener("click", () => {
+    runStage = c.dataset.stage || "";
+    document.querySelectorAll("#run-modes .chip").forEach(x =>
+      x.classList.toggle("active", x === c));
+  });
+});
+
 el("run").addEventListener("click", async () => {
-  const res = await fetch("/run", { method:"POST" });
+  const res = await fetch("/run", {
+    method:"POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stage: runStage || null }),
+  });
   if (res.status === 409) toast("Already running");
   else if (!res.ok) toast("Could not start run");
-  else { toast("Run started"); poll(); }
+  else {
+    const label = runStage === "triage" ? "Triage" : (runStage || "Full");
+    toast(label + " run started");
+    poll();
+  }
 });
 el("stop").addEventListener("click", async () => {
   const res = await fetch("/stop", { method:"POST" });
@@ -1105,6 +1184,7 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                 "id": i["id"], "name": i["name"], "company": i["company"],
                 "status": i["status"], "resolved": i.get("resolved"),
                 "draft_link": i.get("draft_link"),
+                "skip_until": i.get("skip_until"),
             } for i in queue_store.resolved_today()]
             self._send(200, json.dumps(rows))
         elif path.startswith("/brief/"):
@@ -1173,9 +1253,20 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
             if config.LOCK_FILE.exists():
                 self._send(409, '{"error":"already running"}')
                 return
-            subprocess.Popen([str(PYTHON), str(RUN_PY)], cwd=str(config.AUTOPILOT),
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or "{}") if length else {}
+            stage = body.get("stage") or None
+            allowed = {None, "triage", "inbox", "reply", "scout", "organize",
+                       "bounce", "followup", "digest", "sync", "nudge", "prospect"}
+            if stage not in allowed:
+                self._send(400, '{"error":"invalid stage"}')
+                return
+            cmd = [str(PYTHON), str(RUN_PY)]
+            if stage:
+                cmd += ["--stage", stage]
+            subprocess.Popen(cmd, cwd=str(config.AUTOPILOT),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self._send(200, '{"ok":true}')
+            self._send(200, json.dumps({"ok": True, "stage": stage or "full"}))
         elif self.path == "/stop":
             status.STOP_FLAG.touch()
             try:
@@ -1188,14 +1279,58 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
             except Exception:
                 pass
             self._send(200, '{"ok":true}')
+        elif self.path == "/save":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or "{}")
+            item = queue_store.update_pending(
+                body.get("id"),
+                subject=body.get("subject"),
+                email=body.get("email"),
+                body_html=body.get("body_html"),
+            )
+            if not item:
+                self._send(404, '{"error":"item not found"}')
+            else:
+                self._send(200, '{"ok":true}')
         elif self.path == "/undo":
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length) or "{}")
-            item = queue_store.reopen(body.get("id"))
+            item_id = body.get("id")
+            # try skip reopen first
+            item = queue_store.reopen(item_id)
+            if item:
+                self._send(200, json.dumps({"ok": True, "undid": "skipped"}))
+                return
+            item, draft_id, contact_id = queue_store.unapprove(item_id)
             if not item:
                 self._send(404, '{"error":"nothing to undo"}')
-            else:
-                self._send(200, '{"ok":true}')
+                return
+            try:
+                import crm
+                import gmail
+                if draft_id:
+                    try:
+                        gmail.delete_draft(draft_id)
+                    except Exception:
+                        pass
+                if contact_id:
+                    contacts = crm.load()
+                    contacts = [c for c in contacts if c.get("id") != contact_id]
+                    crm.save(contacts)
+                elif item.get("kind") == "outreach" and item.get("email"):
+                    # fallback: remove drafted contact matching email from today
+                    contacts = crm.load()
+                    email = (item.get("email") or "").lower()
+                    contacts = [c for c in contacts
+                                if not (c.get("status") == "drafted"
+                                        and (c.get("email") or "").lower() == email
+                                        and c.get("gmail_draft_id") == draft_id)]
+                    crm.save(contacts)
+            except Exception as e:
+                self._send(200, json.dumps({"ok": True, "undid": "approved",
+                                            "warn": str(e)[:200]}))
+                return
+            self._send(200, json.dumps({"ok": True, "undid": "approved"}))
         elif self.path == "/dismiss":
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length) or "{}")
@@ -1217,8 +1352,11 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                 return
             item = items[0]
             if self.path == "/skip":
-                queue_store.resolve(item_id, "skipped")
-                self._send(200, '{"ok":true}')
+                raw = body.get("skip_until", 7)
+                until = queue_store.skip_until_days(
+                    "forever" if raw == "forever" else raw)
+                queue_store.resolve(item_id, "skipped", skip_until=until)
+                self._send(200, json.dumps({"ok": True, "skip_until": until}))
                 return
             try:
                 import crm
@@ -1237,14 +1375,14 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                     draft = gmail.create_draft(
                         subject=subject, body_html=body_html, to=to_email)
                 link = gmail.draft_link(draft.get("thread_id"))
-                queue_store.resolve(item_id, "approved", gmail_draft_id=draft["draft_id"],
-                                    draft_link=link)
+                contact_id = None
                 if item["kind"] == "outreach":
                     from datetime import date, timedelta
                     contacts = crm.load()
                     crm.migrate(contacts)
+                    contact_id = f"{item['name'].lower().replace(' ', '-')}-{date.today().year}"
                     contacts.append({
-                        "id": f"{item['name'].lower().replace(' ', '-')}-{date.today().year}",
+                        "id": contact_id,
                         "name": item["name"], "email": to_email,
                         "linkedin_url": item["meta"].get("linkedin"),
                         "company": item["company"], "role": None,
@@ -1260,6 +1398,8 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                                       "last_touched": crm.now_iso(), "history": []},
                     })
                     crm.save(contacts)
+                queue_store.resolve(item_id, "approved", gmail_draft_id=draft["draft_id"],
+                                    draft_link=link, contact_id=contact_id)
                 self._send(200, json.dumps({
                     "ok": True,
                     "draft_id": draft["draft_id"],

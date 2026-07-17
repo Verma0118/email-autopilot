@@ -70,7 +70,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--stage", choices=["inbox", "reply", "scout", "organize",
-                                        "bounce", "followup", "digest",
+                                        "bounce", "followup", "digest", "triage",
                                         "sync", "nudge", "prospect"])  # last 3 = legacy aliases
     ap.add_argument("--cap", type=int)
     ap.add_argument("--setup", action="store_true")
@@ -114,9 +114,14 @@ def main():
 
         alias = {"sync": "inbox", "nudge": "reply", "prospect": "scout"}
         stage = alias.get(args.stage, args.stage)
+        TRIAGE = frozenset({"inbox", "reply", "bounce"})
 
         def want(s):
-            return stage in (None, s)
+            if stage is None:
+                return True
+            if stage == "triage":
+                return s in TRIAGE
+            return stage == s
 
         def guarded(name, fn):
             try:
