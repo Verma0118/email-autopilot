@@ -96,9 +96,14 @@ a:hover { text-decoration:underline; }
   <ul id="feed" aria-live="polite"><li>waiting for status…</li></ul>
 </div>
 
+<div class="card" style="padding:0; overflow:hidden">
+  <h2 style="padding:16px 18px 0">Dashboard</h2>
+  <iframe id="dash" src="/dashboard" title="EmailCRM dashboard"
+    style="width:100%; height:1400px; border:0; display:block"></iframe>
+</div>
+
 <footer>
-  <a href="file:///Users/aarav/Desktop/EmailCRM/dashboard.html">Local dashboard</a> ·
-  <a href="https://verma0118.github.io/email-autopilot/">Web dashboard (encrypted)</a> ·
+  <a href="https://verma0118.github.io/email-autopilot/">Web dashboard (encrypted, for away-from-Mac)</a> ·
   <a href="https://mail.google.com/mail/u/0/#drafts">Gmail drafts</a><br>
   Scheduled run: daily 7:04 AM · warning fires at 60% of the autopilot token budget
 </footer>
@@ -131,6 +136,8 @@ async function poll() {
     if (!(s.events || []).length) feed.innerHTML = "<li>no events yet — hit Run now</li>";
     el("run").disabled = !!s.running;
     el("stop").disabled = !s.running;
+    if (window.wasRunning && !s.running) el("dash").src = "/dashboard?t=" + Date.now();
+    window.wasRunning = !!s.running;
   } catch (_) { el("detail").textContent = "panel server unreachable"; }
 }
 el("run").addEventListener("click", () => fetch("/run", { method:"POST" }).then(poll));
@@ -156,6 +163,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self._send(200, PAGE, "text/html; charset=utf-8")
+        elif self.path.startswith("/dashboard"):
+            dash = config.ROOT / "dashboard.html"
+            if dash.exists():
+                self._send(200, dash.read_text(), "text/html; charset=utf-8")
+            else:
+                self._send(200, "<p style='font-family:sans-serif'>No dashboard yet — run the pipeline once.</p>",
+                           "text/html; charset=utf-8")
         elif self.path == "/status":
             if status.STATUS_FILE.exists():
                 self._send(200, status.STATUS_FILE.read_text())
