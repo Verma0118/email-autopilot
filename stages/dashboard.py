@@ -3,6 +3,7 @@
 Regenerated on every run. Single file, vanilla HTML/CSS, native <details>.
 Light/dark via prefers-color-scheme. Fonts load from Google when online.
 """
+import hashlib
 import html
 import json
 import re
@@ -10,6 +11,7 @@ from datetime import date, datetime
 
 import config
 import crm
+import gmail
 
 CSS = """
 :root {
@@ -235,6 +237,73 @@ def _list(entries, tone, item_icon, empty):
     return f'<ul class="list">{rows}</ul>'
 
 
+def _need_id(kind, text):
+    return hashlib.sha1(f"{kind}:{text}".encode()).hexdigest()[:12]
+
+
+def _contact_index(contacts):
+    idx = {}
+    for c in contacts or []:
+        name = c.get("name") or ""
+        company = c.get("company") or ""
+        if name and company:
+            idx[f"{name} ({company})"] = c
+        if name:
+            idx[name] = c
+    return idx
+
+
+_VERIFIED_EMAIL_RE = re.compile(r"verified address ([^\s,]+)", re.I)
+
+
+def _build_needs(contacts, sync, nu, br):
+    """Structured Needs-you rows for dashboard + panel (text, href, dismiss id)."""
+    idx = _contact_index(contacts)
+    items = []
+
+    def add(kind, label, raw, href=None):
+        text = f"{label}: {raw}"
+        items.append({
+            "id": _need_id(kind, text),
+            "kind": kind,
+            "text": text,
+            "href": href,
+        })
+
+    for x in sync.get("replies", []):
+        c = idx.get(x)
+        add("reply", "Reply received. Respond", x, gmail.thread_link((c or {}).get("gmail_thread_id")))
+    for x in nu.get("we_owe", []):
+        # "Name (Company): reason" — match contact on the left of the first colon chunk
+        head = x.split(":", 1)[0].strip()
+        c = idx.get(head)
+        add("owe", "You owe them contact later. Calendar it", x,
+            gmail.thread_link((c or {}).get("gmail_thread_id")))
+    for x in br.get("manual", []):
+        m = _VERIFIED_EMAIL_RE.search(x)
+        href = f"mailto:{m.group(1)}" if m else None
+        add("manual", "Verified address found, send manually", x, href)
+    for x in sync.get("backfill_ambiguous", []):
+        add("ambiguous", "Thread ambiguous, check manually", x, None)
+    return items
+
+
+def _needs_list(items, empty):
+    if not items:
+        return f'<p class="empty">{empty}</p>'
+    rows = []
+    for it in items:
+        link = ""
+        if it.get("href"):
+            label = "Email them" if it["href"].startswith("mailto:") else "Open in Gmail"
+            link = (f'<a class="btn" href="{_esc(it["href"])}" target="_blank" rel="noopener">'
+                    f'{_I["mail"]}{label}</a>')
+        rows.append(
+            f'<li class="item warn"><div class="head">{_I["alert"]}'
+            f'<p class="txt">{_esc(it["text"])}</p></div>{link}</li>')
+    return f'<ul class="list">{"".join(rows)}</ul>'
+
+
 def _sec(title, icon, entries, tone, item_icon, empty):
     n = len(entries or [])
     body = _list(entries, tone, item_icon, empty)
@@ -255,23 +324,19 @@ def render(contacts, report, llm_calls, dry_run=False):
     drafts_today = nu.get("drafted", []) + fu.get("drafted", [])
     errors = (sync.get("errors", []) + nu.get("errors", []) + fu.get("errors", [])
               + br.get("errors", []) + pr.get("errors", []) + report.get("fatal", []))
-    needs_you = (
-        [f"Reply received. Respond: {x}" for x in sync.get("replies", [])]
-        + [f"You owe them contact later. Calendar it: {x}" for x in nu.get("we_owe", [])]
-        + [f"Verified address found, send manually: {x}" for x in br.get("manual", [])]
-        + [f"Thread ambiguous, check manually: {x}" for x in sync.get("backfill_ambiguous", [])]
-    )
+    needs_items = _build_needs(contacts, sync, nu, br)
+    needs_you = [it["text"] for it in needs_items]  # string form for legacy consumers
     bounce_rows = ([f"Fixed, corrected draft in Gmail: {x}" for x in br.get("fixed", [])]
                    + [f"No confident fix, dead: {x}" for x in br.get("dead", [])])
     now = datetime.now().strftime("%A %b %d, %I:%M %p")
     ok = not errors
     status_pill = (f'<span class="pill ok">{_I["check"]}All clear</span>' if ok
                    else f'<span class="pill err">{_I["alert"]}{len(errors)} error{"s" if len(errors) != 1 else ""}</span>')
-    needs_n = len(needs_you)
+    needs_n = len(needs_items)
     needs_block = (
         f'<div class="priority rise" aria-label="Needs you">'
         f'<h2>{_I["user"]}Needs you <span class="count">{needs_n}</span></h2>'
-        f'{_list(needs_you, "warn", "alert", "Nothing needs you right now — you are caught up.")}'
+        f'{_needs_list(needs_items, "Nothing needs you right now — you are caught up.")}'
         f'</div>'
     )
 
@@ -328,13 +393,18 @@ if (location.hostname === "127.0.0.1" || location.hostname === "localhost")
     config.STATE_DIR.mkdir(parents=True, exist_ok=True)
     (config.STATE_DIR / "last_report.json").write_text(json.dumps({
         "generated": datetime.now().isoformat(timespec="seconds"),
-        "needs_you": needs_you,
+        "needs_you": needs_items,
         "needs_n": needs_n,
         "drafts_n": len(drafts_today),
         "errors_n": len(errors),
+        "errors": errors[:20],
         "briefs_n": briefs_queued,
         "open_conversations": counts.get("replied", 0) + counts.get("converted", 0),
         "bounces": counts.get("bounced", 0),
+        "summary": (
+            f"{needs_n} need you · {len(drafts_today)} drafts · "
+            f"{briefs_queued} briefs · {len(errors)} errors"
+        ),
     }, indent=1))
 
     path = config.ROOT / "dashboard.html"

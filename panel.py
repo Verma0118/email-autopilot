@@ -17,6 +17,45 @@ import status
 
 PYTHON = config.AUTOPILOT / ".venv" / "bin" / "python"
 RUN_PY = config.AUTOPILOT / "run.py"
+DISMISS_FILE = config.STATE_DIR / "dismissed_needs.json"
+
+
+def _load_dismissed():
+    if DISMISS_FILE.exists():
+        try:
+            return set(json.loads(DISMISS_FILE.read_text()))
+        except Exception:
+            return set()
+    return set()
+
+
+def _save_dismissed(ids):
+    config.STATE_DIR.mkdir(parents=True, exist_ok=True)
+    DISMISS_FILE.write_text(json.dumps(sorted(ids), indent=1))
+
+
+def _filter_report(raw):
+    """Drop dismissed Needs-you rows; prune stale dismiss ids."""
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+    except Exception:
+        return raw if isinstance(raw, str) else json.dumps(raw)
+    items = data.get("needs_you") or []
+    norm = []
+    for it in items:
+        if isinstance(it, str):
+            norm.append({"id": it, "text": it, "href": None})
+        else:
+            norm.append(it)
+    dismissed = _load_dismissed()
+    alive_ids = {it.get("id") for it in norm if it.get("id")}
+    pruned = dismissed & alive_ids
+    if pruned != dismissed:
+        _save_dismissed(pruned)
+    visible = [it for it in norm if it.get("id") not in pruned]
+    data["needs_you"] = visible
+    data["needs_n"] = len(visible)
+    return json.dumps(data)
 
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -267,11 +306,6 @@ footer.links {
 /* —— queue edit —— */
 .q-subject-row { display:flex; flex-direction:column; gap:4px; margin:8px 0 4px; }
 .q-subject-row label { font-size:.72rem; font-weight:650; color:var(--ink3); text-transform:uppercase; letter-spacing:.06em; }
-.subj-edit {
-  font:inherit; font-weight:550; color:var(--ink); background:var(--surface2);
-  border:1px solid var(--line); border-radius:9px; padding:8px 11px; width:100%;
-}
-.subj-edit:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .body-edit {
   border-left:2px solid var(--line2); background:var(--surface2);
   border-radius:0 10px 10px 0; padding:12px 14px; margin-top:8px;
@@ -294,8 +328,41 @@ footer.links {
 .needs li {
   font-size:.88rem; background:var(--surface); border-radius:10px;
   padding:8px 12px; border:1px solid var(--line);
+  display:flex; flex-direction:column; gap:6px;
 }
+.needs .row-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.needs .row-actions a, .needs .row-actions button {
+  font-size:.78rem; font-weight:650; min-height:auto; padding:0;
+  background:none; border:0; cursor:pointer; color:var(--accent);
+}
+.needs .row-actions button { color:var(--ink3); }
 .needs .go { font-size:.8rem; font-weight:650; margin-top:8px; display:inline-block; }
+.errors-box {
+  background:var(--bad-bg); border:1px solid transparent;
+  border-radius:var(--radius); padding:14px 16px; margin-bottom:12px;
+}
+.errors-box h3 {
+  font-family:var(--display); font-size:1.05rem; font-weight:550;
+  color:var(--bad); margin-bottom:8px;
+}
+.errors-box ul { list-style:none; padding:0; display:flex; flex-direction:column; gap:6px; }
+.errors-box li { font-size:.86rem; color:var(--ink); }
+.lastrun {
+  color:var(--ink2); font-size:.84rem; margin-bottom:12px;
+  padding:8px 12px; background:var(--surface); border:1px solid var(--line);
+  border-radius:10px;
+}
+.lastrun strong { color:var(--ink); font-weight:650; }
+
+.q-fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0 4px; }
+@media (max-width:640px) { .q-fields { grid-template-columns:1fr; } }
+.q-fields label { font-size:.72rem; font-weight:650; color:var(--ink3); text-transform:uppercase; letter-spacing:.06em; display:block; margin-bottom:4px; }
+.subj-edit, .email-edit {
+  font:inherit; font-weight:550; color:var(--ink); background:var(--surface2);
+  border:1px solid var(--line); border-radius:9px; padding:8px 11px; width:100%;
+}
+.subj-edit:focus-visible, .email-edit:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.thread-link { font-size:.8rem; font-weight:650; margin:4px 0 0; display:inline-block; }
 
 /* —— toast —— */
 .toast-wrap {
@@ -349,17 +416,22 @@ footer.links {
   <section class="panel active" id="panel-approvals" role="tabpanel" aria-labelledby="tab-approvals">
     <div class="section-head">
       <h2>Approval queue</h2>
-      <p class="hint">Focus with <span class="kbd">j</span>/<span class="kbd">k</span> · <span class="kbd">a</span> approve · <span class="kbd">s</span> skip · <span class="kbd">o</span> edit body</p>
+      <p class="hint">Focus <span class="kbd">j</span>/<span class="kbd">k</span> · <span class="kbd">a</span> approve (confirm) · <span class="kbd">s</span> skip · <span class="kbd">o</span> edit body</p>
     </div>
     <ul id="queue"></ul>
   </section>
 
   <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" hidden>
     <div class="section-head"><h2>Overview</h2></div>
+    <p class="lastrun" id="lastrun">Last run: <strong id="lastrun-text">—</strong></p>
     <div class="needs" id="needsbox" hidden>
       <h3>Needs you <span class="badge" id="needsbadge" data-n="0">0</span></h3>
       <ul id="needslist"></ul>
       <a class="go" href="#report" id="needs-report">Open full report →</a>
+    </div>
+    <div class="errors-box" id="errorsbox" hidden>
+      <h3>Errors last run</h3>
+      <ul id="errorslist"></ul>
     </div>
     <div class="grid">
       <div class="block">
@@ -479,14 +551,21 @@ function draftPayload(id) {
   const li = document.querySelector('.q-item[data-id="' + CSS.escape(id) + '"]');
   if (!li) return { id };
   const subject = li.querySelector(".subj-edit")?.value;
+  const email = li.querySelector(".email-edit")?.value;
   const body = li.querySelector(".body-edit")?.innerHTML;
   const out = { id };
   if (subject != null) out.subject = subject;
+  if (email != null) out.email = email.trim();
   if (body != null) out.body_html = body;
   return out;
 }
 
-async function act(id, action, btn) {
+async function act(id, action, btn, { confirmApprove = false } = {}) {
+  if (action === "approve" && confirmApprove) {
+    const item = queueItems.find(q => q.id === id);
+    const who = item ? (item.name || "this draft") : "this draft";
+    if (!window.confirm("Approve draft for " + who + " → create Gmail draft?")) return;
+  }
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
   const payload = action === "approve" ? draftPayload(id) : { id };
   const res = await fetch("/" + action, {
@@ -523,14 +602,45 @@ async function loadReport() {
   try {
     const r = await (await fetch("/report")).json();
     const box = el("needsbox");
-    const n = r.needs_n || 0;
+    const items = Array.isArray(r.needs_you) ? r.needs_you : [];
+    /* normalize legacy string rows */
+    const norm = items.map(it => typeof it === "string"
+      ? { id: it, text: it, href: null }
+      : it);
+    const n = r.needs_n != null ? r.needs_n : norm.length;
     el("needsbadge").textContent = n;
     el("needsbadge").dataset.n = String(n);
     const ul = el("needslist");
-    if (!n) { box.hidden = true; ul.innerHTML = ""; return; }
-    box.hidden = false;
-    ul.innerHTML = (r.needs_you || []).slice(0, 8).map(t =>
-      "<li>" + esc(t) + "</li>").join("");
+    if (!n) { box.hidden = true; ul.innerHTML = ""; }
+    else {
+      box.hidden = false;
+      ul.innerHTML = "";
+      norm.slice(0, 10).forEach(it => {
+        const li = document.createElement("li");
+        const actions = [];
+        if (it.href) {
+          const label = String(it.href).startsWith("mailto:") ? "Email them" : "Open in Gmail";
+          actions.push('<a href="' + esc(it.href) + '" target="_blank" rel="noopener">' + label + '</a>');
+        }
+        actions.push('<button type="button" data-dismiss="' + esc(it.id) + '">Dismiss</button>');
+        li.innerHTML = '<div>' + esc(it.text) + '</div><div class="row-actions">' + actions.join("") + '</div>';
+        ul.appendChild(li);
+      });
+      ul.querySelectorAll("[data-dismiss]").forEach(b => b.addEventListener("click", async () => {
+        b.disabled = true;
+        await fetch("/dismiss", { method:"POST", body: JSON.stringify({ id: b.dataset.dismiss }) });
+        loadReport();
+      }));
+    }
+    const ebox = el("errorsbox");
+    const errs = r.errors || [];
+    if (errs.length) {
+      ebox.hidden = false;
+      el("errorslist").innerHTML = errs.slice(0, 8).map(e => "<li>" + esc(e) + "</li>").join("");
+    } else {
+      ebox.hidden = true;
+      el("errorslist").innerHTML = "";
+    }
   } catch (_) {}
 }
 
@@ -544,6 +654,11 @@ async function poll() {
       ? (stageLabel + (s.detail ? " · " + s.detail : ""))
       : "idle";
     el("detail").textContent = s.detail || "—";
+    if (!s.running && s.detail) {
+      el("lastrun-text").textContent = s.detail;
+    } else if (s.running) {
+      el("lastrun-text").textContent = "running now…";
+    }
     const st = el("stream");
     if (s.stream) { st.textContent = s.stream; st.hidden = false; } else st.hidden = true;
     if (s.rundown) el("rundown").textContent = s.rundown;
@@ -570,7 +685,10 @@ async function poll() {
     if (!wasRunning && s.running) showPanel("activity");
     if (wasRunning && !s.running) {
       el("dash").src = "/dashboard?t=" + Date.now();
-      loadReport();
+      await loadReport();
+      const summary = s.detail || "Run finished";
+      const t = toast(esc(summary) + ' · <button type="button" class="linkish">Overview</button>', { timeout: 12000 });
+      t.querySelector(".linkish")?.addEventListener("click", () => showPanel("overview"));
       showPanel(queueItems.length ? "approvals" : "overview");
     }
     wasRunning = !!s.running;
@@ -595,6 +713,7 @@ async function loadQueue() {
     document.querySelectorAll(".q-item").forEach(li => {
       drafts[li.dataset.id] = {
         subject: li.querySelector(".subj-edit")?.value,
+        email: li.querySelector(".email-edit")?.value,
         body: li.querySelector(".body-edit")?.innerHTML,
       };
     });
@@ -609,7 +728,11 @@ async function loadQueue() {
     q.forEach((item, idx) => {
       const draft = drafts[item.id] || {};
       const subject = draft.subject != null ? draft.subject : item.subject;
+      const email = draft.email != null ? draft.email : (item.email || "");
       const body = draft.body != null ? draft.body : sanitizeHtml(item.body_html);
+      const threadHref = item.thread_id
+        ? ("https://mail.google.com/mail/u/0/#inbox/" + encodeURIComponent(item.thread_id))
+        : "";
       const li = document.createElement("li");
       li.className = "q-item";
       li.dataset.id = item.id;
@@ -617,15 +740,20 @@ async function loadQueue() {
         '<div class="q-meta">' +
           '<span class="stream" style="margin:0">' + esc(item.track) + '</span>' +
           '<strong>' + esc(item.name) + '</strong>' +
-          '<span class="sub">' + esc(item.company) + ' · ' + esc(item.email || "no email") + '</span>' +
+          '<span class="sub">' + esc(item.company) + (item.kind ? ' · ' + esc(item.kind) : '') + '</span>' +
         '</div>' +
         (item.why ? '<p class="q-why">' + esc(item.why) + '</p>' : '') +
-        '<div class="q-subject-row"><label for="subj-' + esc(item.id) + '">Subject</label>' +
-          '<input class="subj-edit" id="subj-' + esc(item.id) + '" value="' + esc(subject) + '"></div>' +
+        (threadHref ? '<a class="thread-link" href="' + esc(threadHref) + '" target="_blank" rel="noopener">Open thread in Gmail</a>' : '') +
+        '<div class="q-fields">' +
+          '<div><label for="email-' + esc(item.id) + '">To</label>' +
+            '<input class="email-edit" id="email-' + esc(item.id) + '" type="email" value="' + esc(email) + '" autocomplete="off"></div>' +
+          '<div><label for="subj-' + esc(item.id) + '">Subject</label>' +
+            '<input class="subj-edit" id="subj-' + esc(item.id) + '" value="' + esc(subject) + '"></div>' +
+        '</div>' +
         '<details class="preview"' + (openIds.has(item.id) ? " open" : "") + '>' +
           '<summary>Edit email body</summary>' +
           '<div class="body-edit" contenteditable="true" spellcheck="true">' + body + '</div>' +
-          '<p class="edit-hint">Edits apply when you approve. Plain paste is fine.</p></details>' +
+          '<p class="edit-hint">Paste is plain text. Edits apply when you approve.</p></details>' +
         '<div class="q-actions">' +
           '<button type="button" class="approve" data-a="approve" data-id="' + esc(item.id) + '">Approve → Gmail draft</button>' +
           '<button type="button" class="skip" data-a="skip" data-id="' + esc(item.id) + '">Skip</button>' +
@@ -635,6 +763,13 @@ async function loadQueue() {
         setFocus(idx);
       });
       ul.appendChild(li);
+    });
+    ul.querySelectorAll(".body-edit").forEach(ed => {
+      ed.addEventListener("paste", ev => {
+        ev.preventDefault();
+        const text = (ev.clipboardData || window.clipboardData).getData("text/plain");
+        document.execCommand("insertText", false, text);
+      });
     });
     ul.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => {
       act(b.dataset.id, b.dataset.a, b);
@@ -658,7 +793,7 @@ document.addEventListener("keydown", ev => {
   else if (key === "a") {
     ev.preventDefault();
     const id = queueItems[focusedIndex()]?.id;
-    if (id) act(id, "approve");
+    if (id) act(id, "approve", null, { confirmApprove: true });
   } else if (key === "s") {
     ev.preventDefault();
     const id = queueItems[focusedIndex()]?.id;
@@ -671,8 +806,17 @@ document.addEventListener("keydown", ev => {
   }
 });
 
-el("run").addEventListener("click", () => fetch("/run", { method:"POST" }).then(poll));
-el("stop").addEventListener("click", () => fetch("/stop", { method:"POST" }).then(poll));
+el("run").addEventListener("click", async () => {
+  const res = await fetch("/run", { method:"POST" });
+  if (res.status === 409) toast("Already running");
+  else if (!res.ok) toast("Could not start run");
+  else { toast("Run started"); poll(); }
+});
+el("stop").addEventListener("click", async () => {
+  const res = await fetch("/stop", { method:"POST" });
+  if (!res.ok) toast("Could not stop");
+  else { toast("Stop requested"); poll(); }
+});
 
 (async () => {
   let tab = "approvals";
@@ -770,10 +914,10 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
         elif path == "/report":
             report = config.STATE_DIR / "last_report.json"
             if report.exists():
-                self._send(200, report.read_text())
+                self._send(200, _filter_report(report.read_text()))
             else:
                 self._send(200, json.dumps({"needs_n": 0, "needs_you": [], "drafts_n": 0,
-                                            "errors_n": 0, "briefs_n": 0}))
+                                            "errors_n": 0, "errors": [], "briefs_n": 0}))
         elif path == "/files/digest":
             from datetime import date
             today = config.DIGEST_DIR / f"{date.today().isoformat()}.md"
@@ -829,6 +973,17 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                 self._send(404, '{"error":"nothing to undo"}')
             else:
                 self._send(200, '{"ok":true}')
+        elif self.path == "/dismiss":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or "{}")
+            item_id = body.get("id")
+            if not item_id:
+                self._send(400, '{"error":"id required"}')
+                return
+            ids = _load_dismissed()
+            ids.add(item_id)
+            _save_dismissed(ids)
+            self._send(200, '{"ok":true}')
         elif self.path in ("/approve", "/skip"):
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length) or "{}")
@@ -847,13 +1002,17 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                 import gmail
                 subject = (body.get("subject") or item["subject"] or "").strip() or item["subject"]
                 body_html = body.get("body_html") if body.get("body_html") is not None else item["body_html"]
+                to_email = (body.get("email") or item.get("email") or "").strip()
+                if not to_email:
+                    self._send(400, '{"error":"To address is required"}')
+                    return
                 if item["kind"] == "reply" and item.get("thread_id"):
                     draft = gmail.create_reply_draft(
-                        to=item["email"], subject=subject, body_html=body_html,
+                        to=to_email, subject=subject, body_html=body_html,
                         thread_id=item["thread_id"], in_reply_to=item.get("in_reply_to"))
                 else:
                     draft = gmail.create_draft(
-                        subject=subject, body_html=body_html, to=item["email"])
+                        subject=subject, body_html=body_html, to=to_email)
                 queue_store.resolve(item_id, "approved", gmail_draft_id=draft["draft_id"])
                 if item["kind"] == "outreach":
                     from datetime import date, timedelta
@@ -861,7 +1020,7 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                     crm.migrate(contacts)
                     contacts.append({
                         "id": f"{item['name'].lower().replace(' ', '-')}-{date.today().year}",
-                        "name": item["name"], "email": item["email"],
+                        "name": item["name"], "email": to_email,
                         "linkedin_url": item["meta"].get("linkedin"),
                         "company": item["company"], "role": None,
                         "email_type": item["meta"].get("email_type"),
