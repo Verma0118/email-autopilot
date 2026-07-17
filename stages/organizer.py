@@ -98,7 +98,9 @@ def run(contacts, report, log, dry_run=False):
             why=result.get("hook_used", ""),
             meta={"brief_file": path.name, "email_type": email_type,
                   "linkedin": cand.get("linkedin_url"),
-                  "email_basis": (brief.get("email") or {}).get("basis")},
+                  "email_basis": (brief.get("email") or {}).get("basis"),
+                  "company_signal": brief.get("company_signal"),
+                  "hooks": hooks[:800] if hooks else ""},
         )
         rec["organized"] = True
         path.write_text(json.dumps(rec, indent=1))

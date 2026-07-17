@@ -53,7 +53,7 @@ def add(kind, track_label, name, company, email, subject, body_html, why="",
     return item
 
 
-def resolve(item_id, new_status, gmail_draft_id=None):
+def resolve(item_id, new_status, gmail_draft_id=None, draft_link=None):
     items = load()
     for i in items:
         if i["id"] == item_id and i["status"] == "pending":
@@ -61,6 +61,8 @@ def resolve(item_id, new_status, gmail_draft_id=None):
             i["resolved"] = datetime.now().isoformat(timespec="seconds")
             if gmail_draft_id:
                 i["gmail_draft_id"] = gmail_draft_id
+            if draft_link:
+                i["draft_link"] = draft_link
             save(items)
             return i
     return None
@@ -76,3 +78,16 @@ def reopen(item_id):
             save(items)
             return i
     return None
+
+
+def resolved_today():
+    """Items approved or skipped today, newest first."""
+    today = datetime.now().date().isoformat()
+    out = []
+    for i in load():
+        if i.get("status") not in ("approved", "skipped"):
+            continue
+        resolved = (i.get("resolved") or "")[:10]
+        if resolved == today:
+            out.append(i)
+    return sorted(out, key=lambda x: x.get("resolved") or "", reverse=True)
