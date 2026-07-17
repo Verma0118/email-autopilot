@@ -364,6 +364,61 @@ footer.links {
 .subj-edit:focus-visible, .email-edit:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .thread-link { font-size:.8rem; font-weight:650; margin:4px 0 0; display:inline-block; }
 
+.filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+.chip {
+  font:inherit; font-weight:650; font-size:.78rem; padding:6px 12px; min-height:32px;
+  border-radius:999px; background:var(--surface); color:var(--ink2);
+  border:1px solid var(--line); cursor:pointer;
+}
+.chip:hover { color:var(--ink); border-color:var(--line2); }
+.chip.active { background:var(--accent-soft); color:var(--accent); border-color:transparent; }
+.qsplit { color:var(--ink3); font-size:.82rem; margin-left:8px; font-weight:550; }
+
+.urgency-banner {
+  background:var(--warn-bg); color:var(--warn); border-radius:10px;
+  padding:10px 14px; margin-bottom:12px; font-size:.86rem; font-weight:550;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.urgency-banner button { color:var(--accent); font-weight:650; background:none; border:0;
+  cursor:pointer; min-height:auto; padding:0; text-decoration:underline; }
+
+.context { margin:8px 0 4px; }
+.context summary { cursor:pointer; color:var(--ink2); font-size:.82rem; font-weight:650; }
+.context pre, .ctx-body {
+  margin-top:8px; padding:10px 12px; background:var(--surface2);
+  border-radius:0 10px 10px 0; border-left:2px solid var(--line2);
+  font-size:.78rem; line-height:1.5; white-space:pre-wrap; max-height:220px; overflow:auto;
+  color:var(--ink2);
+}
+
+.gmail-drafts {
+  background:var(--surface); border:1px solid var(--line);
+  border-radius:var(--radius); padding:14px 16px; margin-bottom:12px;
+}
+.gmail-drafts h3 {
+  font-family:var(--display); font-size:1.05rem; font-weight:550;
+  margin-bottom:8px; display:flex; align-items:center; gap:8px;
+}
+.gmail-drafts ul { list-style:none; padding:0; display:flex; flex-direction:column; gap:8px; }
+.gmail-drafts li {
+  font-size:.88rem; padding:10px 12px; border:1px solid var(--line);
+  border-radius:10px; background:var(--surface2);
+}
+.gmail-drafts .row-actions { margin-top:6px; }
+.gmail-drafts .row-actions a { font-size:.78rem; font-weight:650; }
+
+.done-today { margin-top:20px; }
+.done-today summary {
+  cursor:pointer; color:var(--ink2); font-size:.88rem; font-weight:650; padding:6px 0;
+}
+.done-today ul { list-style:none; padding:8px 0 0; display:flex; flex-direction:column; gap:6px; }
+.done-today li {
+  font-size:.84rem; color:var(--ink2); padding:8px 12px;
+  background:var(--surface); border:1px solid var(--line); border-radius:10px;
+}
+.done-today .ok { color:var(--good); font-weight:650; }
+.done-today .skip { color:var(--ink3); }
+
 /* —— toast —— */
 .toast-wrap {
   position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
@@ -405,7 +460,9 @@ footer.links {
       <button class="tab" role="tab" id="tab-approvals" aria-controls="panel-approvals" aria-selected="true" data-panel="approvals">
         Approvals <span class="badge" id="qbadge" data-n="0">0</span>
       </button>
-      <button class="tab" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="false" data-panel="overview">Overview</button>
+      <button class="tab" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="false" data-panel="overview">
+        Overview <span class="badge" id="overviewbadge" data-n="0">0</span>
+      </button>
       <button class="tab" role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="false" data-panel="activity">Activity</button>
       <button class="tab" role="tab" id="tab-report" aria-controls="panel-report" aria-selected="false" data-panel="report">Report</button>
     </nav>
@@ -415,10 +472,23 @@ footer.links {
 <main>
   <section class="panel active" id="panel-approvals" role="tabpanel" aria-labelledby="tab-approvals">
     <div class="section-head">
-      <h2>Approval queue</h2>
+      <h2>Approval queue <span class="qsplit" id="qsplit"></span></h2>
       <p class="hint">Focus <span class="kbd">j</span>/<span class="kbd">k</span> · <span class="kbd">a</span> approve (confirm) · <span class="kbd">s</span> skip · <span class="kbd">o</span> edit body</p>
     </div>
+    <p class="urgency-banner" id="urgency-banner" hidden>
+      <span id="urgency-text"></span>
+      <button type="button" id="urgency-go">Overview →</button>
+    </p>
+    <div class="filters" id="qfilters">
+      <button type="button" class="chip active" data-filter="all">All</button>
+      <button type="button" class="chip" data-filter="reply">Replies</button>
+      <button type="button" class="chip" data-filter="outreach">Outreach</button>
+    </div>
     <ul id="queue"></ul>
+    <details class="done-today" id="done-today">
+      <summary>Done today (<span id="done-count">0</span>)</summary>
+      <ul id="donelist"></ul>
+    </details>
   </section>
 
   <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" hidden>
@@ -428,6 +498,10 @@ footer.links {
       <h3>Needs you <span class="badge" id="needsbadge" data-n="0">0</span></h3>
       <ul id="needslist"></ul>
       <a class="go" href="#report" id="needs-report">Open full report →</a>
+    </div>
+    <div class="gmail-drafts" id="gmailbox" hidden>
+      <h3>Review in Gmail <span class="badge" id="gmailbadge" data-n="0">0</span></h3>
+      <ul id="gmaillist"></ul>
     </div>
     <div class="errors-box" id="errorsbox" hidden>
       <h3>Errors last run</h3>
@@ -491,9 +565,12 @@ const sanitizeHtml = html => String(html ?? "")
   .replace(/\\son\\w+=("[^"]*"|'[^']*'|[^\\s>]+)/gi, "");
 
 let focusId = null;
+let queueAll = [];
 let queueItems = [];
+let queueFilter = "all";
 let lastQueueSig = "";
 let wasRunning = false;
+let needsCount = 0;
 
 function showPanel(name) {
   document.querySelectorAll(".tab").forEach(t => {
@@ -509,6 +586,7 @@ function showPanel(name) {
     const chrome = document.querySelector(".chrome");
     if (chrome) document.documentElement.style.setProperty("--chrome", chrome.offsetHeight + "px");
   }
+  updateUrgencyBanner();
   try { localStorage.setItem("emailcrm-tab", name); } catch (_) {}
 }
 
@@ -519,6 +597,63 @@ el("needs-report").addEventListener("click", ev => {
   ev.preventDefault();
   showPanel("report");
 });
+el("urgency-go").addEventListener("click", () => showPanel("overview"));
+
+document.querySelectorAll("#qfilters .chip").forEach(c => {
+  c.addEventListener("click", () => {
+    queueFilter = c.dataset.filter;
+    document.querySelectorAll("#qfilters .chip").forEach(x =>
+      x.classList.toggle("active", x.dataset.filter === queueFilter));
+    lastQueueSig = "";
+    loadQueue();
+  });
+});
+
+function updateUrgencyBanner() {
+  const banner = el("urgency-banner");
+  const onApprovals = el("panel-approvals").classList.contains("active");
+  if (needsCount > 0 && onApprovals) {
+    banner.hidden = false;
+    el("urgency-text").textContent = needsCount + " item" + (needsCount === 1 ? "" : "s") + " need you on Overview";
+  } else {
+    banner.hidden = true;
+  }
+}
+
+function sortQueue(q) {
+  return [...q].sort((a, b) => {
+    if (a.kind === "reply" && b.kind !== "reply") return -1;
+    if (a.kind !== "reply" && b.kind === "reply") return 1;
+    return (a.created || "").localeCompare(b.created || "");
+  });
+}
+
+function filterQueue(q) {
+  if (queueFilter === "reply") return q.filter(i => i.kind === "reply");
+  if (queueFilter === "outreach") return q.filter(i => i.kind === "outreach");
+  return q;
+}
+
+function contextHtml(item) {
+  const m = item.meta || {};
+  if (item.kind === "reply" && m.thread_preview) {
+    return '<details class="context"><summary>Thread context</summary><pre>' +
+      esc(m.thread_preview) + '</pre></details>';
+  }
+  if (item.kind === "outreach") {
+    const parts = [];
+    if (m.company_signal) parts.push("<strong>Signal</strong> · " + esc(m.company_signal));
+    if (m.hooks) parts.push("<strong>Hooks</strong><br>" + esc(m.hooks).replace(/\\n/g, "<br>"));
+    if (m.email_basis) parts.push("<strong>Email basis</strong> · " + esc(m.email_basis));
+    if (m.brief_file) {
+      parts.push('<a href="/brief/' + encodeURIComponent(m.brief_file) + '" target="_blank" rel="noopener">Full brief</a>');
+    }
+    if (!parts.length) return "";
+    return '<details class="context"><summary>Research context</summary><div class="ctx-body">' +
+      parts.join("<br><br>") + '</div></details>';
+  }
+  return "";
+}
 
 function toast(html, { timeout = 8000 } = {}) {
   const wrap = el("toasts");
@@ -596,6 +731,7 @@ async function act(id, action, btn, { confirmApprove = false } = {}) {
   }
   lastQueueSig = "";
   await loadQueue();
+  await loadHistory();
 }
 
 async function loadReport() {
@@ -603,13 +739,18 @@ async function loadReport() {
     const r = await (await fetch("/report")).json();
     const box = el("needsbox");
     const items = Array.isArray(r.needs_you) ? r.needs_you : [];
-    /* normalize legacy string rows */
     const norm = items.map(it => typeof it === "string"
       ? { id: it, text: it, href: null }
       : it);
     const n = r.needs_n != null ? r.needs_n : norm.length;
+    needsCount = n;
     el("needsbadge").textContent = n;
     el("needsbadge").dataset.n = String(n);
+    const gmailN = r.gmail_drafts_n || (r.gmail_drafts || []).length;
+    const ob = el("overviewbadge");
+    ob.textContent = n + gmailN;
+    ob.dataset.n = String(n + gmailN);
+    updateUrgencyBanner();
     const ul = el("needslist");
     if (!n) { box.hidden = true; ul.innerHTML = ""; }
     else {
@@ -632,6 +773,24 @@ async function loadReport() {
         loadReport();
       }));
     }
+    const gbox = el("gmailbox");
+    const drafts = r.gmail_drafts || [];
+    el("gmailbadge").textContent = drafts.length;
+    el("gmailbadge").dataset.n = String(drafts.length);
+    if (!drafts.length) { gbox.hidden = true; el("gmaillist").innerHTML = ""; }
+    else {
+      gbox.hidden = false;
+      el("gmaillist").innerHTML = drafts.slice(0, 12).map(d => {
+        const link = d.href
+          ? '<a href="' + esc(d.href) + '" target="_blank" rel="noopener">Open draft</a>'
+          : '<a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Gmail drafts</a>';
+        const body = d.body
+          ? '<details><summary>Preview</summary><pre style="margin-top:6px;font-size:.78rem;white-space:pre-wrap">' +
+            esc(d.body.slice(0, 400)) + (d.body.length > 400 ? "…" : "") + '</pre></details>'
+          : "";
+        return '<li><div>' + esc(d.text) + '</div><div class="row-actions">' + link + '</div>' + body + '</li>';
+      }).join("");
+    }
     const ebox = el("errorsbox");
     const errs = r.errors || [];
     if (errs.length) {
@@ -641,6 +800,26 @@ async function loadReport() {
       ebox.hidden = true;
       el("errorslist").innerHTML = "";
     }
+  } catch (_) {}
+}
+
+async function loadHistory() {
+  try {
+    const rows = await (await fetch("/history")).json();
+    el("done-count").textContent = rows.length;
+    const ul = el("donelist");
+    if (!rows.length) { ul.innerHTML = '<li class="sub">Nothing resolved yet today.</li>'; return; }
+    ul.innerHTML = rows.map(it => {
+      const when = (it.resolved || "").slice(11, 16) || "—";
+      const who = esc(it.name) + " · " + esc(it.company);
+      if (it.status === "approved") {
+        const link = it.draft_link
+          ? '<a href="' + esc(it.draft_link) + '" target="_blank" rel="noopener">Open draft</a>'
+          : "";
+        return '<li><span class="ok">Approved</span> ' + who + ' · ' + when + (link ? " · " + link : "") + '</li>';
+      }
+      return '<li><span class="skip">Skipped</span> ' + who + ' · ' + when + '</li>';
+    }).join("");
   } catch (_) {}
 }
 
@@ -689,7 +868,7 @@ async function poll() {
       const summary = s.detail || "Run finished";
       const t = toast(esc(summary) + ' · <button type="button" class="linkish">Overview</button>', { timeout: 12000 });
       t.querySelector(".linkish")?.addEventListener("click", () => showPanel("overview"));
-      showPanel(queueItems.length ? "approvals" : "overview");
+      showPanel(queueAll.length ? "approvals" : "overview");
     }
     wasRunning = !!s.running;
   } catch (_) { el("detail").textContent = "panel server unreachable"; }
@@ -698,16 +877,25 @@ async function poll() {
 async function loadQueue() {
   try {
     const q = await (await fetch("/queue")).json();
-    const sig = JSON.stringify(q.map(i => [i.id, i.subject, i.body_html, i.why, i.track]));
-    queueItems = q;
+    queueAll = sortQueue(q);
+    const nReply = queueAll.filter(i => i.kind === "reply").length;
+    const nOut = queueAll.filter(i => i.kind === "outreach").length;
+    el("qsplit").textContent = queueAll.length
+      ? (nReply ? nReply + " repl" + (nReply === 1 ? "y" : "ies") : "")
+        + (nReply && nOut ? " · " : "")
+        + (nOut ? nOut + " outreach" : "")
+      : "";
+    const filtered = filterQueue(queueAll);
+    const sig = JSON.stringify(filtered.map(i => [i.id, i.subject, i.body_html, i.why, i.track]));
+    queueItems = filtered;
     const badge = el("qbadge");
-    badge.textContent = q.length;
-    badge.dataset.n = String(q.length);
+    badge.textContent = filtered.length;
+    badge.dataset.n = String(filtered.length);
     if (sig === lastQueueSig) return;
     lastQueueSig = sig;
 
     const openIds = new Set(
-      [...document.querySelectorAll(".q-item details.preview[open]")].map(d => d.closest(".q-item")?.dataset.id)
+      [...document.querySelectorAll(".q-item details[open]")].map(d => d.closest(".q-item")?.dataset.id)
     );
     const drafts = {};
     document.querySelectorAll(".q-item").forEach(li => {
@@ -719,13 +907,16 @@ async function loadQueue() {
     });
 
     const ul = el("queue");
-    if (!q.length) {
-      ul.innerHTML = '<li class="empty"><strong>Nothing waiting</strong>Approve drafts here after a run. Until then, check Overview or Report.</li>';
+    if (!filtered.length) {
+      const msg = queueAll.length && queueFilter !== "all"
+        ? "No " + queueFilter + " items in the queue."
+        : "Nothing waiting — approve drafts here after a run.";
+      ul.innerHTML = '<li class="empty"><strong>Nothing waiting</strong>' + esc(msg) + '</li>';
       focusId = null;
       return;
     }
     ul.innerHTML = "";
-    q.forEach((item, idx) => {
+    filtered.forEach((item, idx) => {
       const draft = drafts[item.id] || {};
       const subject = draft.subject != null ? draft.subject : item.subject;
       const email = draft.email != null ? draft.email : (item.email || "");
@@ -733,6 +924,7 @@ async function loadQueue() {
       const threadHref = item.thread_id
         ? ("https://mail.google.com/mail/u/0/#inbox/" + encodeURIComponent(item.thread_id))
         : "";
+      const ctx = contextHtml(item);
       const li = document.createElement("li");
       li.className = "q-item";
       li.dataset.id = item.id;
@@ -743,6 +935,7 @@ async function loadQueue() {
           '<span class="sub">' + esc(item.company) + (item.kind ? ' · ' + esc(item.kind) : '') + '</span>' +
         '</div>' +
         (item.why ? '<p class="q-why">' + esc(item.why) + '</p>' : '') +
+        ctx +
         (threadHref ? '<a class="thread-link" href="' + esc(threadHref) + '" target="_blank" rel="noopener">Open thread in Gmail</a>' : '') +
         '<div class="q-fields">' +
           '<div><label for="email-' + esc(item.id) + '">To</label>' +
@@ -774,7 +967,7 @@ async function loadQueue() {
     ul.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => {
       act(b.dataset.id, b.dataset.a, b);
     }));
-    if (!q.some(i => i.id === focusId)) focusId = q[0].id;
+    if (!filtered.some(i => i.id === focusId)) focusId = filtered[0]?.id || null;
     setFocus(focusedIndex());
   } catch (_) {}
 }
@@ -823,12 +1016,14 @@ el("stop").addEventListener("click", async () => {
   try { tab = localStorage.getItem("emailcrm-tab") || "approvals"; } catch (_) {}
   await loadQueue();
   await loadReport();
-  if (queueItems.length) tab = "approvals";
+  await loadHistory();
+  if (queueAll.length) tab = "approvals";
   showPanel(tab);
   poll();
   setInterval(poll, 2000);
   setInterval(loadQueue, 5000);
   setInterval(loadReport, 15000);
+  setInterval(loadHistory, 20000);
 })();
 </script>
 </body></html>
@@ -905,6 +1100,33 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                            "text/html; charset=utf-8")
         elif path == "/queue":
             self._send(200, json.dumps(queue_store.pending()))
+        elif path == "/history":
+            rows = [{
+                "id": i["id"], "name": i["name"], "company": i["company"],
+                "status": i["status"], "resolved": i.get("resolved"),
+                "draft_link": i.get("draft_link"),
+            } for i in queue_store.resolved_today()]
+            self._send(200, json.dumps(rows))
+        elif path.startswith("/brief/"):
+            from urllib.parse import unquote
+            name = unquote(path.split("/brief/", 1)[1])
+            if ".." in name or "/" in name or not name:
+                self._send(404, "not found", "text/plain; charset=utf-8")
+                return
+            brief = config.QUEUE_PROSPECTS / name
+            if brief.is_file():
+                text = brief.read_text(errors="replace")
+                if brief.suffix == ".json":
+                    try:
+                        text = json.dumps(json.loads(text), indent=2)
+                    except Exception:
+                        pass
+                    ctype = "application/json; charset=utf-8"
+                else:
+                    ctype = "text/plain; charset=utf-8"
+                self._send(200, text, ctype)
+            else:
+                self._send(404, "not found", "text/plain; charset=utf-8")
         elif path == "/status":
             if status.STATUS_FILE.exists():
                 self._send(200, status.STATUS_FILE.read_text())
@@ -917,6 +1139,7 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                 self._send(200, _filter_report(report.read_text()))
             else:
                 self._send(200, json.dumps({"needs_n": 0, "needs_you": [], "drafts_n": 0,
+                                            "gmail_drafts": [], "gmail_drafts_n": 0,
                                             "errors_n": 0, "errors": [], "briefs_n": 0}))
         elif path == "/files/digest":
             from datetime import date
@@ -927,7 +1150,7 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                 self._send(200, self._dir_page("Digests", config.DIGEST_DIR, "*.md"),
                            "text/html; charset=utf-8")
         elif path == "/files/prospects":
-            self._send(200, self._dir_page("Prospect briefs", config.QUEUE_PROSPECTS, "*.md"),
+            self._send(200, self._dir_page("Prospect briefs", config.QUEUE_PROSPECTS, "*.json"),
                        "text/html; charset=utf-8")
         elif path == "/files/logs":
             self._send(200, self._dir_page("Run logs", config.LOG_DIR, "*"),
@@ -1013,7 +1236,9 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                 else:
                     draft = gmail.create_draft(
                         subject=subject, body_html=body_html, to=to_email)
-                queue_store.resolve(item_id, "approved", gmail_draft_id=draft["draft_id"])
+                link = gmail.draft_link(draft.get("thread_id"))
+                queue_store.resolve(item_id, "approved", gmail_draft_id=draft["draft_id"],
+                                    draft_link=link)
                 if item["kind"] == "outreach":
                     from datetime import date, timedelta
                     contacts = crm.load()
@@ -1038,7 +1263,7 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                 self._send(200, json.dumps({
                     "ok": True,
                     "draft_id": draft["draft_id"],
-                    "draft_link": gmail.draft_link(draft.get("thread_id")),
+                    "draft_link": link,
                 }))
             except Exception as e:
                 self._send(500, json.dumps({"error": str(e)[:300]}))

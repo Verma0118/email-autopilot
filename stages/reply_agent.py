@@ -99,7 +99,8 @@ def run(contacts, report, cap, log, dry_run=False):
             subject=result["subject"], body_html=result["body_html"],
             why=result.get("why", ""),
             thread_id=c["gmail_thread_id"], in_reply_to=in_reply_to,
-            meta={"contact_id": c["id"]},
+            meta={"contact_id": c["id"],
+                  "thread_preview": thread[-1200:] if len(thread) > 1200 else thread},
         )
         log({"action": "reply_queued", "contact": c["id"], "item": item["id"]})
         r["queued"].append(f"{c['name']} ({c['company']}): {result.get('why')}")

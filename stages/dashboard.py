@@ -237,6 +237,23 @@ def _list(entries, tone, item_icon, empty):
     return f'<ul class="list">{rows}</ul>'
 
 
+def _parse_gmail_drafts(entries):
+    """Turn digest draft rows into structured {text, href, body} for the panel."""
+    items = []
+    for entry in entries or []:
+        body = None
+        text = entry
+        if "\n  BODY: " in entry:
+            text, body = entry.split("\n  BODY: ", 1)
+        link = None
+        m = DRAFT_LINK_RE.search(text)
+        if m:
+            link = m.group(1)
+            text = DRAFT_LINK_RE.sub("", text).strip()
+        items.append({"text": text, "href": link, "body": body})
+    return items
+
+
 def _need_id(kind, text):
     return hashlib.sha1(f"{kind}:{text}".encode()).hexdigest()[:12]
 
@@ -322,6 +339,7 @@ def render(contacts, report, llm_calls, dry_run=False):
     backlog = len(crm.followup_candidates(contacts))
     briefs_queued = len(list(config.QUEUE_PROSPECTS.glob("*.md")))
     drafts_today = nu.get("drafted", []) + fu.get("drafted", [])
+    gmail_drafts = _parse_gmail_drafts(drafts_today)
     errors = (sync.get("errors", []) + nu.get("errors", []) + fu.get("errors", [])
               + br.get("errors", []) + pr.get("errors", []) + report.get("fatal", []))
     needs_items = _build_needs(contacts, sync, nu, br)
@@ -396,6 +414,8 @@ if (location.hostname === "127.0.0.1" || location.hostname === "localhost")
         "needs_you": needs_items,
         "needs_n": needs_n,
         "drafts_n": len(drafts_today),
+        "gmail_drafts": gmail_drafts,
+        "gmail_drafts_n": len(gmail_drafts),
         "errors_n": len(errors),
         "errors": errors[:20],
         "briefs_n": briefs_queued,
