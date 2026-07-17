@@ -400,9 +400,9 @@ footer.links {
 
 .help-overlay {
   position:fixed; inset:0; background:rgba(20,32,26,.45); z-index:50;
-  display:grid; place-items:center; padding:24px;
+  display:none; place-items:center; padding:24px;
 }
-.help-overlay[hidden] { display:none !important; }
+.help-overlay.is-open { display:grid; }
 .help-card {
   background:var(--surface); border:1px solid var(--line); border-radius:16px;
   padding:22px 24px; width:min(420px, 100%); max-height:80vh; overflow:auto;
@@ -616,8 +616,8 @@ footer.links {
   </footer>
 </main>
 <div class="toast-wrap" id="toasts" aria-live="polite"></div>
-<div class="help-overlay" id="help" hidden>
-  <div class="help-card" role="dialog" aria-labelledby="help-title">
+<div class="help-overlay" id="help" aria-hidden="true">
+  <div class="help-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
     <h2 id="help-title">Keyboard shortcuts</h2>
     <dl>
       <dt><span class="kbd">1</span>–<span class="kbd">4</span></dt><dd>Approvals / Overview / Activity / Report</dd>
@@ -626,7 +626,7 @@ footer.links {
       <dt><span class="kbd">s</span></dt><dd>Skip focused for 7 days</dd>
       <dt><span class="kbd">o</span></dt><dd>Toggle edit body</dd>
       <dt><span class="kbd">/</span></dt><dd>Focus search</dd>
-      <dt><span class="kbd">?</span></dt><dd>This help</dd>
+      <dt><span class="kbd">?</span></dt><dd>Toggle this help</dd>
       <dt><span class="kbd">Esc</span></dt><dd>Close help</dd>
     </dl>
     <button type="button" class="close" id="help-close">Close</button>
@@ -701,9 +701,28 @@ el("qsearch").addEventListener("input", () => {
   loadQueue();
 });
 
-el("help-close").addEventListener("click", () => { el("help").hidden = true; });
+function helpIsOpen() {
+  return el("help").classList.contains("is-open");
+}
+function openHelp() {
+  el("help").classList.add("is-open");
+  el("help").setAttribute("aria-hidden", "false");
+}
+function closeHelp() {
+  el("help").classList.remove("is-open");
+  el("help").setAttribute("aria-hidden", "true");
+}
+function toggleHelp() {
+  if (helpIsOpen()) closeHelp(); else openHelp();
+}
+
+el("help-close").addEventListener("click", ev => {
+  ev.preventDefault();
+  ev.stopPropagation();
+  closeHelp();
+});
 el("help").addEventListener("click", ev => {
-  if (ev.target === el("help")) el("help").hidden = true;
+  if (ev.target === el("help")) closeHelp();
 });
 
 function updateUrgencyBanner() {
@@ -1192,16 +1211,17 @@ async function loadQueue() {
 }
 
 document.addEventListener("keydown", ev => {
-  if (ev.key === "Escape" && !el("help").hidden) {
-    el("help").hidden = true; return;
+  if (ev.key === "Escape") {
+    if (helpIsOpen()) { closeHelp(); ev.preventDefault(); return; }
+    if (ev.target === el("qsearch")) { el("qsearch").blur(); return; }
   }
   if (ev.target.matches("input, textarea, select, [contenteditable]") || ev.metaKey || ev.ctrlKey || ev.altKey) {
-    if (ev.key === "Escape" && ev.target === el("qsearch")) { el("qsearch").blur(); }
     return;
   }
   const approvalsOn = el("panel-approvals").classList.contains("active");
   const key = ev.key.toLowerCase();
-  if (key === "?" || (ev.shiftKey && key === "/")) { ev.preventDefault(); el("help").hidden = false; return; }
+  if (key === "?" || (ev.shiftKey && key === "/")) { ev.preventDefault(); toggleHelp(); return; }
+  if (helpIsOpen()) return; /* ignore other shortcuts while help is open */
   if (key === "/") { ev.preventDefault(); showPanel("approvals"); el("qsearch").focus(); return; }
   if (key === "1") { showPanel("approvals"); return; }
   if (key === "2") { showPanel("overview"); return; }
