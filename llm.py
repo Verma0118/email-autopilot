@@ -86,6 +86,8 @@ def call(prompt, use_exa=False, max_turns=8):
         result_text = str(envelope.get("result", ""))
         if envelope.get("api_error_status") == 429 or "session limit" in result_text.lower():
             llm_down = True
+            m = re.search(r"resets?\s+([^(·\n]+)", result_text)
+            status.limit_hit(m.group(1).strip() if m else "unknown")
             raise LLMError(f"rate/session limit, skipping all LLM stages this run: {result_text[:200]}")
         raise LLMError(f"CLI error result: {result_text[:300]}")
     return _extract_json(envelope.get("result", ""))

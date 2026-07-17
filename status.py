@@ -2,10 +2,13 @@
 import json
 import os
 import subprocess
+import threading
 import time
 from datetime import datetime
 
 import config
+
+_lock = threading.Lock()
 
 STATUS_FILE = config.STATE_DIR / "status.json"
 STOP_FLAG = config.STATE_DIR / "stop.flag"
@@ -40,6 +43,7 @@ def begin(mode):
 
 
 def update(stage=None, detail=None, stream=None):
+  with _lock:
     if stage is not None:
         _state["stage"] = stage
     if detail is not None:
@@ -49,10 +53,18 @@ def update(stage=None, detail=None, stream=None):
     ev = {"ts": datetime.now().strftime("%H:%M:%S"),
           "stage": _state.get("stage"), "detail": _state.get("detail"),
           "stream": _state.get("stream")}
-    _state.setdefault("events", []).append(ev)
-    _state["events"] = _state["events"][-60:]
+    events = _state.setdefault("events", [])
+    if not events or (events[-1]["detail"], events[-1]["stage"]) != (ev["detail"], ev["stage"]):
+        events.append(ev)
+    _state["events"] = events[-60:]
     _state["tokens"] = tokens_snapshot()
     _write()
+
+
+def set_field(key, value):
+    with _lock:
+        _state[key] = value
+        _write()
 
 
 def end(summary):
@@ -101,9 +113,19 @@ def over_budget():
     return config.SESSION_TOKEN_BUDGET and data["tokens"] >= config.SESSION_TOKEN_BUDGET
 
 
+def limit_hit(reset_text):
+    """Real Anthropic session limit observed (429). Snap meter to limit state."""
+    data = _load_tokens()
+    data["limit_hit"] = True
+    data["limit_reset"] = reset_text
+    TOKENS_FILE.write_text(json.dumps(data))
+
+
 def tokens_snapshot():
     data = _load_tokens()
     budget = config.SESSION_TOKEN_BUDGET
     return {"used": data["tokens"], "budget": budget, "calls": data["calls"],
-            "pct": round(100 * data["tokens"] / budget, 1) if budget else 0,
+            "pct": 100.0 if data.get("limit_hit") else (round(100 * data["tokens"] / budget, 1) if budget else 0),
+            "limit_hit": data.get("limit_hit", False),
+            "limit_reset": data.get("limit_reset"),
             "window_started": datetime.fromtimestamp(data["window_start"]).strftime("%H:%M")}

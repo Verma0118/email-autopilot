@@ -69,7 +69,9 @@ def make_logger(dry_run):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--stage", choices=["sync", "nudge", "bounce", "followup", "prospect", "digest"])
+    ap.add_argument("--stage", choices=["inbox", "reply", "scout", "organize",
+                                        "bounce", "followup", "digest",
+                                        "sync", "nudge", "prospect"])  # last 3 = legacy aliases
     ap.add_argument("--cap", type=int)
     ap.add_argument("--setup", action="store_true")
     args = ap.parse_args()
@@ -105,10 +107,16 @@ def main():
             crm.save(contacts, args.dry_run)
             log({"action": "schema_migrated"})
 
-        from stages import bounce_retry, digest, followups, inbox_sync, prospecting, reply_nudges
+        import threading
+
+        from stages import (bounce_retry, digest, followups, inbox_agent,
+                            organizer, prospecting, reply_agent)
+
+        alias = {"sync": "inbox", "nudge": "reply", "prospect": "scout"}
+        stage = alias.get(args.stage, args.stage)
 
         def want(s):
-            return args.stage in (None, s)
+            return stage in (None, s)
 
         def guarded(name, fn):
             try:
@@ -117,29 +125,48 @@ def main():
                 fn()
             except status.Stopped:
                 report.setdefault("stopped", True)
-                report["fatal"].append(f"{name}: stopped from panel")
                 raise
             except Exception:
                 report["fatal"].append(f"{name} crashed: {traceback.format_exc(limit=3)}")
 
+        def thread_a():
+            """Inbox Agent -> Reply Agent -> bounce retry. Owns all CRM writes."""
+            try:
+                if want("inbox"):
+                    guarded("inbox agent", lambda: inbox_agent.run(
+                        contacts, report, log, dry_run=args.dry_run))
+                if want("reply"):
+                    guarded("reply agent", lambda: reply_agent.run(
+                        contacts, report, args.cap or config.NUDGE_DAILY_CAP, log, dry_run=args.dry_run))
+                if want("bounce"):
+                    guarded("bounce retry", lambda: bounce_retry.run(
+                        contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log, dry_run=args.dry_run))
+                if stage == "followup" or (stage is None and config.COLD_FOLLOWUPS_ENABLED):
+                    guarded("cold follow-ups", lambda: followups.run(
+                        contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log, dry_run=args.dry_run))
+            except status.Stopped:
+                pass
+
+        def thread_b():
+            """Scout Agent. Reads CRM for dedupe only; writes its own ledger/briefs."""
+            try:
+                if want("scout"):
+                    guarded("scout agent", lambda: prospecting.run(
+                        contacts, report, args.cap, log, dry_run=args.dry_run))
+            except status.Stopped:
+                pass
+
+        ta = threading.Thread(target=thread_a, name="inbox+reply")
+        tb = threading.Thread(target=thread_b, name="scout")
+        ta.start(); tb.start()
+        ta.join(); tb.join()
+
         try:
-            if want("sync"):
-                guarded("inbox sync", lambda: inbox_sync.run(
-                    contacts, report, dry_run=args.dry_run))
-            if want("nudge"):
-                guarded("reply nudges", lambda: reply_nudges.run(
-                    contacts, report, args.cap or config.NUDGE_DAILY_CAP, log, dry_run=args.dry_run))
-            if want("bounce"):
-                guarded("bounce retry", lambda: bounce_retry.run(
-                    contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log, dry_run=args.dry_run))
-            if args.stage == "followup" or (args.stage is None and config.COLD_FOLLOWUPS_ENABLED):
-                guarded("cold follow-ups", lambda: followups.run(
-                    contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log, dry_run=args.dry_run))
-            if want("prospect"):
-                guarded("prospecting", lambda: prospecting.run(
-                    contacts, report, args.cap or config.PROSPECT_DAILY_CAP, log, dry_run=args.dry_run))
+            if want("organize"):
+                guarded("organizer", lambda: organizer.run(
+                    contacts, report, log, dry_run=args.dry_run))
         except status.Stopped:
-            pass  # fall through to digest with what we have
+            pass
 
         status.update(stage="digest", detail="writing digest + dashboard")
         path, summary = digest.run(contacts, report, llm.calls_made(), dry_run=args.dry_run)

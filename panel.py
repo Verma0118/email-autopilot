@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import config
+import queue_store
 import status
 
 PYTHON = config.AUTOPILOT / ".venv" / "bin" / "python"
@@ -85,11 +86,20 @@ a:hover { text-decoration:underline; }
     <p class="sub" id="detail">—</p>
     <span class="stream" id="stream" hidden></span>
   </div>
-  <div class="card tok" id="tokcard"><h2>Token budget (5h window)</h2>
+  <div class="card tok" id="tokcard"><h2>Autopilot LLM spend (5h window)</h2>
     <p class="big" id="tokpct">0%</p>
     <p class="sub" id="tokdetail">—</p>
     <meter id="tokmeter" min="0" max="100" low="59" high="60" optimum="10" value="0"></meter>
+    <p class="sub">Self-metered. Your full Claude session % is at claude.ai → Settings → Usage; Anthropic exposes it nowhere I can read. If a call hits the real limit this snaps to 100% with the reset time.</p>
   </div>
+</div>
+
+<div class="card" style="margin-bottom:10px"><h2>Inbox rundown</h2>
+  <p class="sub" id="rundown" style="font-size:.92rem; color:var(--ink)">—</p>
+</div>
+
+<div class="card" style="margin-bottom:10px"><h2>Approval queue <span class="count" id="qcount">0</span></h2>
+  <ul id="queue" style="list-style:none; padding:0; display:flex; flex-direction:column; gap:10px"></ul>
 </div>
 
 <div class="card" style="margin-bottom:10px"><h2>Live feed</h2>
@@ -118,10 +128,13 @@ async function poll() {
     el("detail").textContent = s.detail || "—";
     const st = el("stream");
     if (s.stream) { st.textContent = s.stream; st.hidden = false; } else st.hidden = true;
+    if (s.rundown) el("rundown").textContent = s.rundown;
     const t = s.tokens || {};
-    el("tokpct").textContent = (t.pct || 0) + "%";
-    el("tokdetail").textContent = (t.used || 0).toLocaleString() + " / " + (t.budget || 0).toLocaleString()
-      + " tokens · " + (t.calls || 0) + " calls since " + (t.window_started || "—");
+    el("tokpct").textContent = t.limit_hit ? "LIMIT" : ((t.pct || 0) + "%");
+    el("tokdetail").textContent = t.limit_hit
+      ? "Anthropic session limit hit · resets " + (t.limit_reset || "soon")
+      : (t.used || 0).toLocaleString() + " / " + (t.budget || 0).toLocaleString()
+        + " tokens · " + (t.calls || 0) + " calls since " + (t.window_started || "—");
     el("tokmeter").value = Math.min(100, t.pct || 0);
     el("tokcard").className = "card tok" + (t.pct >= 100 ? " bad" : (t.pct >= 60 ? " warn" : ""));
     const feed = el("feed");
@@ -140,9 +153,39 @@ async function poll() {
     window.wasRunning = !!s.running;
   } catch (_) { el("detail").textContent = "panel server unreachable"; }
 }
+async function loadQueue() {
+  try {
+    const q = await (await fetch("/queue")).json();
+    el("qcount").textContent = q.length;
+    const ul = el("queue");
+    ul.innerHTML = q.length ? "" : '<li class="sub">Nothing waiting for approval.</li>';
+    q.forEach(item => {
+      const li = document.createElement("li");
+      li.style.cssText = "border:1px solid var(--line); border-radius:12px; padding:12px 14px";
+      li.innerHTML =
+        '<div style="display:flex; gap:8px; align-items:baseline; flex-wrap:wrap">' +
+        '<span class="stream">' + item.track + '</span>' +
+        '<strong>' + item.name + '</strong><span class="sub">' + item.company + ' · ' + (item.email || "no email") + '</span></div>' +
+        '<p class="sub" style="margin-top:4px">' + (item.why || "") + '</p>' +
+        '<p class="sub" style="margin-top:4px"><strong>Subject:</strong> ' + item.subject + '</p>' +
+        '<details><summary>Read email</summary><blockquote style="border-left:2px solid var(--line2); background:var(--card2); border-radius:0 10px 10px 0; padding:10px 14px; margin-top:8px; font-size:.9rem">' + item.body_html + '</blockquote></details>' +
+        '<div style="margin-top:8px">' +
+        '<button data-a="approve" data-id="' + item.id + '" style="background:var(--good-bg); color:var(--good); margin-right:8px">Approve → Gmail draft</button>' +
+        '<button data-a="skip" data-id="' + item.id + '" style="background:var(--card2); color:var(--ink2)">Skip</button></div>';
+      ul.appendChild(li);
+    });
+    ul.querySelectorAll("button").forEach(b => b.addEventListener("click", async () => {
+      b.disabled = true; b.textContent = "…";
+      const res = await fetch("/" + b.dataset.a, { method:"POST", body: JSON.stringify({ id: b.dataset.id }) });
+      if (!res.ok) { b.textContent = "error"; b.disabled = false; return; }
+      loadQueue();
+    }));
+  } catch (_) {}
+}
 el("run").addEventListener("click", () => fetch("/run", { method:"POST" }).then(poll));
 el("stop").addEventListener("click", () => fetch("/stop", { method:"POST" }).then(poll));
 poll(); setInterval(poll, 2000);
+loadQueue(); setInterval(loadQueue, 5000);
 </script>
 </body></html>
 """
@@ -170,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, "<p style='font-family:sans-serif'>No dashboard yet — run the pipeline once.</p>",
                            "text/html; charset=utf-8")
+        elif self.path == "/queue":
+            self._send(200, json.dumps(queue_store.pending()))
         elif self.path == "/status":
             if status.STATUS_FILE.exists():
                 self._send(200, status.STATUS_FILE.read_text())
@@ -189,7 +234,66 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, '{"ok":true}')
         elif self.path == "/stop":
             status.STOP_FLAG.touch()
+            # graceful flag first; then kill the run process tree so in-flight
+            # claude subprocesses die too instead of blocking for minutes
+            try:
+                if status.STATUS_FILE.exists():
+                    pid = json.loads(status.STATUS_FILE.read_text()).get("pid")
+                    if pid:
+                        subprocess.run(["pkill", "-TERM", "-P", str(pid)], timeout=10)
+                        subprocess.run(["kill", "-TERM", str(pid)], timeout=10)
+                subprocess.run(["pkill", "-TERM", "-f", "autopilot/run.py"], timeout=10)
+            except Exception:
+                pass
             self._send(200, '{"ok":true}')
+        elif self.path in ("/approve", "/skip"):
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or "{}")
+            item_id = body.get("id")
+            items = [i for i in queue_store.pending() if i["id"] == item_id]
+            if not items:
+                self._send(404, '{"error":"item not found or already resolved"}')
+                return
+            item = items[0]
+            if self.path == "/skip":
+                queue_store.resolve(item_id, "skipped")
+                self._send(200, '{"ok":true}')
+                return
+            try:
+                import crm
+                import gmail
+                if item["kind"] == "reply" and item.get("thread_id"):
+                    draft = gmail.create_reply_draft(
+                        to=item["email"], subject=item["subject"], body_html=item["body_html"],
+                        thread_id=item["thread_id"], in_reply_to=item.get("in_reply_to"))
+                else:
+                    draft = gmail.create_draft(
+                        subject=item["subject"], body_html=item["body_html"], to=item["email"])
+                queue_store.resolve(item_id, "approved", gmail_draft_id=draft["draft_id"])
+                if item["kind"] == "outreach":
+                    from datetime import date, timedelta
+                    contacts = crm.load()
+                    crm.migrate(contacts)
+                    contacts.append({
+                        "id": f"{item['name'].lower().replace(' ', '-')}-{date.today().year}",
+                        "name": item["name"], "email": item["email"],
+                        "linkedin_url": item["meta"].get("linkedin"),
+                        "company": item["company"], "role": None,
+                        "email_type": item["meta"].get("email_type"),
+                        "sent_at": None, "drafted_at": crm.now_iso(),
+                        "status": "drafted", "gmail_draft_id": draft["draft_id"],
+                        "gmail_thread_id": draft.get("thread_id"), "gmail_message_id": None,
+                        "follow_up_due": (date.today() + timedelta(days=7)).isoformat(),
+                        "hook_used": item.get("why"), "notes": "queued by autopilot organizer",
+                        "follow_up_count": 0, "follow_up_draft_id": None,
+                        "follow_up_drafted_at": None,
+                        "autopilot": {"thread_backfill": None, "bounce_retry": None,
+                                      "last_touched": crm.now_iso(), "history": []},
+                    })
+                    crm.save(contacts)
+                self._send(200, json.dumps({"ok": True, "draft_id": draft["draft_id"]}))
+            except Exception as e:
+                self._send(500, json.dumps({"error": str(e)[:300]}))
         else:
             self._send(404, "{}")
 

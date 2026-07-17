@@ -1,4 +1,4 @@
-Research this outreach candidate thoroughly using the exa search tools. Two UIUC students will send a short research-framed coffee chat request; your job is verification and hooks, not drafting.
+Research this outreach candidate thoroughly using the exa search tools. Your job is verification and hooks, not drafting. Target profile for this track: <<TRACK_WHO>>
 
 ## Candidate
 - Name: <<NAME>>

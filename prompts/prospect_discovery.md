@@ -1,16 +1,13 @@
-Find NEW outreach candidates for two UIUC students researching drone fleet operations and compliance/records workflows at HIGH FLIGHT VOLUME operators. Use the exa search tools.
+Find NEW outreach candidates for Aarav Verma, a UIUC Aerospace Engineering sophomore. Use the exa search tools.
 
 ## Target segment today
 <<SEGMENT_NAME>>: <<SEGMENT_BRIEF>>
 
 ## Who qualifies
-- Operational practitioners: UAS program managers, chief pilots, DFR program leads, fleet/ops supervisors, training leads
-- At organizations flying FREQUENTLY (daily/weekly operations, dedicated crews, multi-office fleets, 100+ pilot training orgs)
-- People likely to answer a respectful student research email (practitioners, not C-suite of giant corps)
+<<TRACK_WHO>>
 
 ## Who does NOT qualify
-- Low-volume operators (single pilot shops, ~4 flights/month survey firms)
-- Sales/marketing people
+<<TRACK_WHO_NOT>>
 - Anyone without a findable current role
 
 ## Output

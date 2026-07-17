@@ -74,6 +74,27 @@ def lint_followup(subject, body_html, expected_subject, max_words=100):
     return errors
 
 
+OUTREACH_WORD_CAPS = {"startup_discovery": 170, "cold_outreach": 340,
+                      "networking_warm": 390, "nobe_pd_outreach": 220}
+
+
+def lint_outreach(subject, body_html, expected_subject, email_type):
+    """First-touch outreach lint. Reuses the follow-up checks with per-type caps."""
+    errors = lint_followup(subject, body_html, expected_subject,
+                           max_words=OUTREACH_WORD_CAPS.get(email_type, 340))
+    text = _strip_html(body_html).lower()
+    if email_type == "startup_discovery":
+        if "not pitching anything" not in text:
+            errors.append('missing mandatory "Not pitching anything..." sentence')
+        for banned in ("validate", "startup", "co-founder", "volant"):
+            if banned in text:
+                errors.append(f'startup_discovery may not contain "{banned}"')
+    if email_type == "nobe_pd_outreach" and "12-week project from september to december" not in text:
+        errors.append("missing mandatory NOBE 12-week pitch paragraph")
+    # follow-up lint flags sub-25-word bodies; outreach must be substantial anyway
+    return errors
+
+
 def domain_has_mx(domain):
     try:
         out = subprocess.run(
