@@ -402,6 +402,7 @@ footer.links {
   position:fixed; inset:0; background:rgba(20,32,26,.45); z-index:50;
   display:grid; place-items:center; padding:24px;
 }
+.help-overlay[hidden] { display:none !important; }
 .help-card {
   background:var(--surface); border:1px solid var(--line); border-radius:16px;
   padding:22px 24px; width:min(420px, 100%); max-height:80vh; overflow:auto;
