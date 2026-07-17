@@ -191,3 +191,12 @@ def draft_link(thread_id):
 
 def thread_link(thread_id):
     return f"https://mail.google.com/mail/u/0/#inbox/{thread_id}" if thread_id else None
+
+
+def delete_draft(draft_id):
+    """Remove a Gmail draft. Compose scope is enough; never sends."""
+    if not draft_id:
+        return False
+    svc = get_service()
+    svc.users().drafts().delete(userId="me", id=draft_id).execute()
+    return True

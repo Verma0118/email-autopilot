@@ -41,7 +41,8 @@ def run(contacts, report, cap, log, dry_run=False):
     candidates = [c for c in contacts
                   if c.get("status") in ("replied", "converted")
                   and c.get("gmail_thread_id")
-                  and not queue_store.has_pending_for(c.get("email"))]
+                  and not queue_store.has_pending_for(c.get("email"))
+                  and not queue_store.blocked_for(c.get("email"))]
 
     for c in candidates[:cap]:
         status.check_stop()
