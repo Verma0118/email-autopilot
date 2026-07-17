@@ -90,5 +90,9 @@ def run(contacts, report, cap, log, dry_run=False):
         c["follow_up_due"] = crm.due_plus_followup_days()
         crm.save(contacts, dry_run)
         log({"action": "bounce_retry_drafted", "contact": c["id"], "draft_id": draft["draft_id"]})
-        r["fixed"].append(f"{c['name']} ({c['company']}): {ap['bounce_retry']['old_email']} -> {corrected}")
+        link = gmail.draft_link(draft.get("thread_id")) or ""
+        link_bit = f" link: {link}" if link else ""
+        r["fixed"].append(
+            f"{c['name']} ({c['company']}): {ap['bounce_retry']['old_email']} -> {corrected}"
+            f"{link_bit}")
     return r

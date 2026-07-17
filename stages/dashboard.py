@@ -12,6 +12,7 @@ from datetime import date, datetime
 import config
 import crm
 import gmail
+import queue_store
 
 CSS = """
 :root {
@@ -273,9 +274,10 @@ def _contact_index(contacts):
 _VERIFIED_EMAIL_RE = re.compile(r"verified address ([^\s,]+)", re.I)
 
 
-def _build_needs(contacts, sync, nu, br):
+def _build_needs(contacts, sync, we_owe, br, pending_emails=None):
     """Structured Needs-you rows for dashboard + panel (text, href, dismiss id)."""
     idx = _contact_index(contacts)
+    pending = {e.lower() for e in (pending_emails or []) if e}
     items = []
 
     def add(kind, label, raw, href=None):
@@ -289,8 +291,12 @@ def _build_needs(contacts, sync, nu, br):
 
     for x in sync.get("replies", []):
         c = idx.get(x)
+        email = ((c or {}).get("email") or "").lower()
+        # Already queued for approval — Approvals tab owns it
+        if email and email in pending:
+            continue
         add("reply", "Reply received. Respond", x, gmail.thread_link((c or {}).get("gmail_thread_id")))
-    for x in nu.get("we_owe", []):
+    for x in we_owe:
         # "Name (Company): reason" — match contact on the left of the first colon chunk
         head = x.split(":", 1)[0].strip()
         c = idx.get(head)
@@ -331,21 +337,43 @@ def _sec(title, icon, entries, tone, item_icon, empty):
 
 def render(contacts, report, llm_calls, dry_run=False):
     sync = report.get("inbox_sync", {})
+    ia = report.get("inbox_agent", {})
+    ra = report.get("reply_agent", {})
     nu = report.get("reply_nudges", {})
     fu = report.get("followups", {})
     br = report.get("bounce_retry", {})
     pr = report.get("prospecting", {})
     counts = crm.counts(contacts)
     backlog = len(crm.followup_candidates(contacts))
-    briefs_queued = len(list(config.QUEUE_PROSPECTS.glob("*.md")))
+    # Organizer consumes *.json briefs; count unorganized ones waiting for Organize
+    brief_files = list(config.QUEUE_PROSPECTS.glob("*.json"))
+    unorganized = []
+    for path in brief_files:
+        try:
+            rec = json.loads(path.read_text())
+            if not rec.get("organized"):
+                cand = rec.get("candidate") or {}
+                unorganized.append({
+                    "file": path.name,
+                    "name": cand.get("name") or path.stem,
+                    "company": cand.get("company") or "",
+                    "track": rec.get("track") or config.STREAM_LABELS.get(rec.get("email_type"), ""),
+                })
+        except Exception:
+            unorganized.append({"file": path.name, "name": path.stem, "company": "", "track": ""})
+    briefs_queued = len(unorganized)
     drafts_today = nu.get("drafted", []) + fu.get("drafted", [])
-    gmail_drafts = _parse_gmail_drafts(drafts_today)
-    errors = (sync.get("errors", []) + nu.get("errors", []) + fu.get("errors", [])
+    linked_bounce = [x for x in br.get("fixed", []) if DRAFT_LINK_RE.search(x)]
+    gmail_drafts = _parse_gmail_drafts(drafts_today + linked_bounce)
+    errors = (sync.get("errors", []) + ia.get("errors", []) + ra.get("errors", [])
+              + nu.get("errors", []) + fu.get("errors", [])
               + br.get("errors", []) + pr.get("errors", []) + report.get("fatal", []))
-    needs_items = _build_needs(contacts, sync, nu, br)
-    needs_you = [it["text"] for it in needs_items]  # string form for legacy consumers
+    we_owe = list(ra.get("we_owe", []) or []) + list(nu.get("we_owe", []) or [])
+    pending_emails = [i.get("email") for i in queue_store.pending()]
+    needs_items = _build_needs(contacts, sync, we_owe, br, pending_emails=pending_emails)
     bounce_rows = ([f"Fixed, corrected draft in Gmail: {x}" for x in br.get("fixed", [])]
                    + [f"No confident fix, dead: {x}" for x in br.get("dead", [])])
+    action_items = ia.get("action_items") or []
     now = datetime.now().strftime("%A %b %d, %I:%M %p")
     ok = not errors
     status_pill = (f'<span class="pill ok">{_I["check"]}All clear</span>' if ok
@@ -377,14 +405,14 @@ def render(contacts, report, llm_calls, dry_run=False):
 
 <section class="tiles rise" aria-label="Pipeline totals">
   <div class="tile hot"><span class="n">{needs_n}</span><span class="l">items need you</span></div>
-  <div class="tile"><span class="n">{len(drafts_today)}</span><span class="l">drafts created today</span></div>
+  <div class="tile"><span class="n">{len(gmail_drafts)}</span><span class="l">drafts to review in Gmail</span></div>
   <div class="tile"><span class="n">{counts.get('replied', 0) + counts.get('converted', 0)}</span><span class="l">open conversations</span></div>
   <div class="tile"><span class="n">{counts.get('bounced', 0)}</span><span class="l">bounces unresolved</span></div>
-  <div class="tile"><span class="n">{briefs_queued}</span><span class="l">prospect briefs queued</span></div>
+  <div class="tile"><span class="n">{briefs_queued}</span><span class="l">briefs awaiting organize</span></div>
   <div class="tile"><span class="n">{backlog}</span><span class="l">cold backlog (paused)</span></div>
 </section>
 
-{_sec("Drafts waiting in Gmail — review, then send", "mail", drafts_today, "good", "check", "No drafts created today.")}
+{_sec("Drafts waiting in Gmail — review, then send", "mail", drafts_today + linked_bounce, "good", "check", "No drafts created today.")}
 {_sec("Bounce handling", "zap", bounce_rows, "warn", "alert", "No bounce activity today.")}
 {_sec("New prospect briefs", "search", pr.get("briefs", []), "good", "check", "No new briefs today.")}
 {_sec("Errors", "bug", errors, "bad", "x", "No errors.")}
@@ -413,17 +441,19 @@ if (location.hostname === "127.0.0.1" || location.hostname === "localhost")
         "generated": datetime.now().isoformat(timespec="seconds"),
         "needs_you": needs_items,
         "needs_n": needs_n,
-        "drafts_n": len(drafts_today),
+        "drafts_n": len(gmail_drafts),
         "gmail_drafts": gmail_drafts,
         "gmail_drafts_n": len(gmail_drafts),
         "errors_n": len(errors),
         "errors": errors[:20],
         "briefs_n": briefs_queued,
+        "briefs_waiting": unorganized[:20],
+        "action_items": action_items[:12],
         "open_conversations": counts.get("replied", 0) + counts.get("converted", 0),
         "bounces": counts.get("bounced", 0),
         "summary": (
-            f"{needs_n} need you · {len(drafts_today)} drafts · "
-            f"{briefs_queued} briefs · {len(errors)} errors"
+            f"{needs_n} need you · {len(gmail_drafts)} Gmail drafts · "
+            f"{briefs_queued} briefs to organize · {len(errors)} errors"
         ),
     }, indent=1))
 

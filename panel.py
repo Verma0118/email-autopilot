@@ -500,6 +500,7 @@ footer.links {
           <button type="button" class="chip active" data-stage="">Full</button>
           <button type="button" class="chip" data-stage="triage">Triage</button>
           <button type="button" class="chip" data-stage="scout">Scout</button>
+          <button type="button" class="chip" data-stage="organize">Organize</button>
           <button type="button" class="chip" data-stage="digest">Digest</button>
         </div>
         <button id="run" type="button">Run now</button>
@@ -553,6 +554,15 @@ footer.links {
     <div class="gmail-drafts" id="gmailbox" hidden>
       <h3>Review in Gmail <span class="badge" id="gmailbadge" data-n="0">0</span></h3>
       <ul id="gmaillist"></ul>
+    </div>
+    <div class="gmail-drafts" id="briefsbox" hidden>
+      <h3>Briefs awaiting organize <span class="badge" id="briefsbadge" data-n="0">0</span></h3>
+      <ul id="briefslist"></ul>
+      <button type="button" class="go" id="briefs-organize" style="margin-top:10px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:650">Run Organize →</button>
+    </div>
+    <div class="needs" id="actionsbox" hidden>
+      <h3>Inbox action items</h3>
+      <ul id="actionslist"></ul>
     </div>
     <div class="errors-box" id="errorsbox" hidden>
       <h3>Errors last run</h3>
@@ -888,9 +898,10 @@ async function loadReport() {
     el("needsbadge").textContent = n;
     el("needsbadge").dataset.n = String(n);
     const gmailN = r.gmail_drafts_n || (r.gmail_drafts || []).length;
+    const briefsN = r.briefs_n || (r.briefs_waiting || []).length;
     const ob = el("overviewbadge");
-    ob.textContent = n + gmailN;
-    ob.dataset.n = String(n + gmailN);
+    ob.textContent = n + gmailN + briefsN;
+    ob.dataset.n = String(n + gmailN + briefsN);
     updateUrgencyBanner();
     const ul = el("needslist");
     if (!n) { box.hidden = true; ul.innerHTML = ""; }
@@ -931,6 +942,31 @@ async function loadReport() {
           : "";
         return '<li><div>' + esc(d.text) + '</div><div class="row-actions">' + link + '</div>' + body + '</li>';
       }).join("");
+    }
+    const bbox = el("briefsbox");
+    const briefs = r.briefs_waiting || [];
+    el("briefsbadge").textContent = briefsN;
+    el("briefsbadge").dataset.n = String(briefsN);
+    if (!briefsN) { bbox.hidden = true; el("briefslist").innerHTML = ""; }
+    else {
+      bbox.hidden = false;
+      el("briefslist").innerHTML = briefs.slice(0, 12).map(b => {
+        const who = esc(b.name || b.file) + (b.company ? " · " + esc(b.company) : "");
+        const track = b.track ? '<span class="sub"> · ' + esc(b.track) + '</span>' : "";
+        const link = b.file
+          ? ' · <a href="/brief/' + encodeURIComponent(b.file) + '" target="_blank" rel="noopener">Open</a>'
+          : "";
+        return "<li>" + who + track + link + "</li>";
+      }).join("");
+    }
+    const abox = el("actionsbox");
+    const actions = r.action_items || [];
+    if (actions.length) {
+      abox.hidden = false;
+      el("actionslist").innerHTML = actions.map(a => "<li>" + esc(a) + "</li>").join("");
+    } else {
+      abox.hidden = true;
+      el("actionslist").innerHTML = "";
     }
     const ebox = el("errorsbox");
     const errs = r.errors || [];
@@ -1100,7 +1136,7 @@ async function loadQueue() {
         '<details class="preview"' + (openIds.has(item.id) ? " open" : "") + '>' +
           '<summary>Edit email body</summary>' +
           '<div class="body-edit" contenteditable="true" spellcheck="true">' + body + '</div>' +
-          '<p class="edit-hint">Paste is plain text. Edits apply when you approve.</p></details>' +
+          '<p class="edit-hint">Paste is plain text. Edits autosave; Approve creates the Gmail draft.</p></details>' +
         '<div class="q-actions">' +
           '<button type="button" class="approve" data-a="approve" data-id="' + esc(item.id) + '">Approve → Gmail draft</button>' +
           '<span class="skip-menu">' +
@@ -1187,6 +1223,13 @@ document.addEventListener("keydown", ev => {
     const d = item?.querySelector("details.preview");
     if (d) d.open = !d.open;
   }
+});
+
+el("briefs-organize")?.addEventListener("click", () => {
+  runStage = "organize";
+  document.querySelectorAll("#run-modes .chip").forEach(x =>
+    x.classList.toggle("active", x.dataset.stage === "organize"));
+  el("run").click();
 });
 
 document.querySelectorAll("#run-modes .chip").forEach(c => {
