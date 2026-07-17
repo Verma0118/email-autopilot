@@ -187,3 +187,7 @@ def create_reply_draft(to, subject, body_html, thread_id, in_reply_to):
 
 def draft_link(thread_id):
     return f"https://mail.google.com/mail/u/0/#drafts/{thread_id}" if thread_id else None
+
+
+def thread_link(thread_id):
+    return f"https://mail.google.com/mail/u/0/#inbox/{thread_id}" if thread_id else None
