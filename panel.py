@@ -263,6 +263,62 @@ footer.links {
   margin-top:28px; color:var(--ink3); font-size:.8rem; line-height:1.9;
   border-top:1px solid var(--line); padding-top:14px;
 }
+
+/* —— queue edit —— */
+.q-subject-row { display:flex; flex-direction:column; gap:4px; margin:8px 0 4px; }
+.q-subject-row label { font-size:.72rem; font-weight:650; color:var(--ink3); text-transform:uppercase; letter-spacing:.06em; }
+.subj-edit {
+  font:inherit; font-weight:550; color:var(--ink); background:var(--surface2);
+  border:1px solid var(--line); border-radius:9px; padding:8px 11px; width:100%;
+}
+.subj-edit:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.body-edit {
+  border-left:2px solid var(--line2); background:var(--surface2);
+  border-radius:0 10px 10px 0; padding:12px 14px; margin-top:8px;
+  font-size:.9rem; line-height:1.55; max-width:70ch; color:var(--ink);
+  min-height:7rem; outline:none;
+}
+.body-edit:focus { box-shadow:inset 0 0 0 1px var(--accent); }
+.edit-hint { color:var(--ink3); font-size:.76rem; margin-top:4px; }
+
+/* —— needs-you strip —— */
+.needs {
+  background:var(--accent-soft); border:1px solid transparent;
+  border-radius:var(--radius); padding:14px 16px; margin-bottom:12px;
+}
+.needs h3 {
+  font-family:var(--display); font-size:1.05rem; font-weight:550;
+  letter-spacing:-.02em; margin-bottom:8px; display:flex; align-items:center; gap:8px;
+}
+.needs ul { list-style:none; padding:0; display:flex; flex-direction:column; gap:6px; }
+.needs li {
+  font-size:.88rem; background:var(--surface); border-radius:10px;
+  padding:8px 12px; border:1px solid var(--line);
+}
+.needs .go { font-size:.8rem; font-weight:650; margin-top:8px; display:inline-block; }
+
+/* —— toast —— */
+.toast-wrap {
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+  z-index:40; display:flex; flex-direction:column; gap:8px; width:min(420px, calc(100% - 32px));
+  pointer-events:none;
+}
+.toast {
+  pointer-events:auto; background:var(--ink); color:var(--surface);
+  border-radius:12px; padding:12px 14px; font-size:.88rem; font-weight:550;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  box-shadow:0 8px 28px rgba(20,32,26,.22);
+  animation:rise 280ms var(--ease);
+}
+@media (prefers-color-scheme: dark) {
+  .toast { background:var(--surface2); color:var(--ink); border:1px solid var(--line2); }
+}
+.toast a, .toast button.linkish {
+  color:var(--accent); font-weight:650; background:none; border:0; padding:0;
+  min-height:auto; cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+.toast .dismiss { margin-left:auto; color:inherit; opacity:.7; background:none; border:0;
+  min-height:auto; padding:2px 6px; cursor:pointer; font-weight:650; }
 </style></head>
 <body>
 <div class="chrome">
@@ -293,13 +349,18 @@ footer.links {
   <section class="panel active" id="panel-approvals" role="tabpanel" aria-labelledby="tab-approvals">
     <div class="section-head">
       <h2>Approval queue</h2>
-      <p class="hint">Focus with <span class="kbd">j</span>/<span class="kbd">k</span> · <span class="kbd">a</span> approve · <span class="kbd">s</span> skip · <span class="kbd">o</span> open body</p>
+      <p class="hint">Focus with <span class="kbd">j</span>/<span class="kbd">k</span> · <span class="kbd">a</span> approve · <span class="kbd">s</span> skip · <span class="kbd">o</span> edit body</p>
     </div>
     <ul id="queue"></ul>
   </section>
 
   <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" hidden>
     <div class="section-head"><h2>Overview</h2></div>
+    <div class="needs" id="needsbox" hidden>
+      <h3>Needs you <span class="badge" id="needsbadge" data-n="0">0</span></h3>
+      <ul id="needslist"></ul>
+      <a class="go" href="#report" id="needs-report">Open full report →</a>
+    </div>
     <div class="grid">
       <div class="block">
         <p class="label">Current activity</p>
@@ -338,24 +399,29 @@ footer.links {
 
   <footer class="links">
     <a href="https://verma0118.github.io/email-autopilot/">Web dashboard</a> (encrypted, away-from-Mac) ·
-    <a href="https://mail.google.com/mail/u/0/#drafts">Gmail drafts</a><br>
+    <a href="https://mail.google.com/mail/u/0/#drafts">Gmail drafts</a> ·
+    <a href="/files/digest" target="_blank" rel="noopener">Digest</a> ·
+    <a href="/files/prospects" target="_blank" rel="noopener">Briefs</a> ·
+    <a href="/files/logs" target="_blank" rel="noopener">Logs</a><br>
     Scheduled run: daily 7:04 AM · warning at 60% of the autopilot token budget
   </footer>
 </main>
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
 
 <script>
 const el = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
 }[c]));
-/* body_html from the model is intentionally rendered; still neutralize script/iframe. */
 const sanitizeHtml = html => String(html ?? "")
   .replace(/<script[\\s\\S]*?<\\/script>/gi, "")
   .replace(/<iframe[\\s\\S]*?<\\/iframe>/gi, "")
   .replace(/\\son\\w+=("[^"]*"|'[^']*'|[^\\s>]+)/gi, "");
 
-let focusIdx = 0;
+let focusId = null;
 let queueItems = [];
+let lastQueueSig = "";
+let wasRunning = false;
 
 function showPanel(name) {
   document.querySelectorAll(".tab").forEach(t => {
@@ -368,7 +434,6 @@ function showPanel(name) {
     p.hidden = !on;
   });
   if (name === "report") {
-    /* ensure iframe has room after sticky chrome measured */
     const chrome = document.querySelector(".chrome");
     if (chrome) document.documentElement.style.setProperty("--chrome", chrome.offsetHeight + "px");
   }
@@ -378,23 +443,95 @@ function showPanel(name) {
 document.querySelectorAll(".tab").forEach(t => {
   t.addEventListener("click", () => showPanel(t.dataset.panel));
 });
+el("needs-report").addEventListener("click", ev => {
+  ev.preventDefault();
+  showPanel("report");
+});
+
+function toast(html, { timeout = 8000 } = {}) {
+  const wrap = el("toasts");
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.innerHTML = html + '<button type="button" class="dismiss" aria-label="Dismiss">×</button>';
+  const kill = () => t.remove();
+  t.querySelector(".dismiss").onclick = kill;
+  wrap.appendChild(t);
+  if (timeout) setTimeout(kill, timeout);
+  return t;
+}
+
+function focusedIndex() {
+  if (!queueItems.length) return 0;
+  const i = queueItems.findIndex(q => q.id === focusId);
+  return i >= 0 ? i : 0;
+}
 
 function setFocus(i) {
   const items = [...document.querySelectorAll(".q-item")];
-  if (!items.length) { focusIdx = 0; return; }
-  focusIdx = Math.max(0, Math.min(i, items.length - 1));
-  items.forEach((n, idx) => n.classList.toggle("focused", idx === focusIdx));
-  items[focusIdx].scrollIntoView({ block:"nearest", behavior:"smooth" });
+  if (!items.length) { focusId = null; return; }
+  const idx = Math.max(0, Math.min(i, items.length - 1));
+  focusId = items[idx].dataset.id;
+  items.forEach((n, j) => n.classList.toggle("focused", j === idx));
+  items[idx].scrollIntoView({ block:"nearest", behavior:"smooth" });
+}
+
+function draftPayload(id) {
+  const li = document.querySelector('.q-item[data-id="' + CSS.escape(id) + '"]');
+  if (!li) return { id };
+  const subject = li.querySelector(".subj-edit")?.value;
+  const body = li.querySelector(".body-edit")?.innerHTML;
+  const out = { id };
+  if (subject != null) out.subject = subject;
+  if (body != null) out.body_html = body;
+  return out;
 }
 
 async function act(id, action, btn) {
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
-  const res = await fetch("/" + action, { method:"POST", body: JSON.stringify({ id }) });
+  const payload = action === "approve" ? draftPayload(id) : { id };
+  const res = await fetch("/" + action, {
+    method:"POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
   if (!res.ok) {
     if (btn) { btn.textContent = "error"; btn.disabled = false; }
+    toast(esc(data.error || "Something went wrong"));
     return;
   }
+  if (action === "approve") {
+    const link = data.draft_link
+      || "https://mail.google.com/mail/u/0/#drafts";
+    toast('Draft created. <a href="' + esc(link) + '" target="_blank" rel="noopener">Open in Gmail</a>');
+  } else if (action === "skip") {
+    const t = toast('Skipped. <button type="button" class="linkish" data-undo="' + esc(id) + '">Undo</button>');
+    t.querySelector("[data-undo]")?.addEventListener("click", async (ev) => {
+      const b = ev.currentTarget;
+      b.disabled = true; b.textContent = "…";
+      const r = await fetch("/undo", { method:"POST", body: JSON.stringify({ id }) });
+      if (r.ok) { toast("Restored to queue"); loadQueue(); }
+      else toast("Could not undo");
+    });
+  }
+  lastQueueSig = "";
   await loadQueue();
+}
+
+async function loadReport() {
+  try {
+    const r = await (await fetch("/report")).json();
+    const box = el("needsbox");
+    const n = r.needs_n || 0;
+    el("needsbadge").textContent = n;
+    el("needsbadge").dataset.n = String(n);
+    const ul = el("needslist");
+    if (!n) { box.hidden = true; ul.innerHTML = ""; return; }
+    box.hidden = false;
+    ul.innerHTML = (r.needs_you || []).slice(0, 8).map(t =>
+      "<li>" + esc(t) + "</li>").join("");
+  } catch (_) {}
 }
 
 async function poll() {
@@ -430,27 +567,51 @@ async function poll() {
     if (!(s.events || []).length) feed.innerHTML = "<li>no events yet — hit Run now</li>";
     el("run").disabled = !!s.running;
     el("stop").disabled = !s.running;
-    if (window.wasRunning && !s.running) el("dash").src = "/dashboard?t=" + Date.now();
-    window.wasRunning = !!s.running;
+    if (!wasRunning && s.running) showPanel("activity");
+    if (wasRunning && !s.running) {
+      el("dash").src = "/dashboard?t=" + Date.now();
+      loadReport();
+      showPanel(queueItems.length ? "approvals" : "overview");
+    }
+    wasRunning = !!s.running;
   } catch (_) { el("detail").textContent = "panel server unreachable"; }
 }
 
 async function loadQueue() {
   try {
     const q = await (await fetch("/queue")).json();
+    const sig = JSON.stringify(q.map(i => [i.id, i.subject, i.body_html, i.why, i.track]));
     queueItems = q;
     const badge = el("qbadge");
     badge.textContent = q.length;
     badge.dataset.n = String(q.length);
+    if (sig === lastQueueSig) return;
+    lastQueueSig = sig;
+
+    const openIds = new Set(
+      [...document.querySelectorAll(".q-item details.preview[open]")].map(d => d.closest(".q-item")?.dataset.id)
+    );
+    const drafts = {};
+    document.querySelectorAll(".q-item").forEach(li => {
+      drafts[li.dataset.id] = {
+        subject: li.querySelector(".subj-edit")?.value,
+        body: li.querySelector(".body-edit")?.innerHTML,
+      };
+    });
+
     const ul = el("queue");
     if (!q.length) {
       ul.innerHTML = '<li class="empty"><strong>Nothing waiting</strong>Approve drafts here after a run. Until then, check Overview or Report.</li>';
+      focusId = null;
       return;
     }
     ul.innerHTML = "";
     q.forEach((item, idx) => {
+      const draft = drafts[item.id] || {};
+      const subject = draft.subject != null ? draft.subject : item.subject;
+      const body = draft.body != null ? draft.body : sanitizeHtml(item.body_html);
       const li = document.createElement("li");
-      li.className = "q-item" + (idx === focusIdx ? " focused" : "");
+      li.className = "q-item";
       li.dataset.id = item.id;
       li.innerHTML =
         '<div class="q-meta">' +
@@ -459,15 +620,18 @@ async function loadQueue() {
           '<span class="sub">' + esc(item.company) + ' · ' + esc(item.email || "no email") + '</span>' +
         '</div>' +
         (item.why ? '<p class="q-why">' + esc(item.why) + '</p>' : '') +
-        '<p class="q-subject"><span>Subject · </span>' + esc(item.subject) + '</p>' +
-        '<details class="preview"><summary>Read email</summary>' +
-          '<blockquote class="body">' + sanitizeHtml(item.body_html) + '</blockquote></details>' +
+        '<div class="q-subject-row"><label for="subj-' + esc(item.id) + '">Subject</label>' +
+          '<input class="subj-edit" id="subj-' + esc(item.id) + '" value="' + esc(subject) + '"></div>' +
+        '<details class="preview"' + (openIds.has(item.id) ? " open" : "") + '>' +
+          '<summary>Edit email body</summary>' +
+          '<div class="body-edit" contenteditable="true" spellcheck="true">' + body + '</div>' +
+          '<p class="edit-hint">Edits apply when you approve. Plain paste is fine.</p></details>' +
         '<div class="q-actions">' +
           '<button type="button" class="approve" data-a="approve" data-id="' + esc(item.id) + '">Approve → Gmail draft</button>' +
           '<button type="button" class="skip" data-a="skip" data-id="' + esc(item.id) + '">Skip</button>' +
         '</div>';
       li.addEventListener("click", ev => {
-        if (ev.target.closest("button, a, summary, details")) return;
+        if (ev.target.closest("button, a, summary, details, input, [contenteditable]")) return;
         setFocus(idx);
       });
       ul.appendChild(li);
@@ -475,13 +639,13 @@ async function loadQueue() {
     ul.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => {
       act(b.dataset.id, b.dataset.a, b);
     }));
-    if (focusIdx >= q.length) focusIdx = Math.max(0, q.length - 1);
-    setFocus(focusIdx);
+    if (!q.some(i => i.id === focusId)) focusId = q[0].id;
+    setFocus(focusedIndex());
   } catch (_) {}
 }
 
 document.addEventListener("keydown", ev => {
-  if (ev.target.matches("input, textarea, select") || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.target.matches("input, textarea, select, [contenteditable]") || ev.metaKey || ev.ctrlKey || ev.altKey) return;
   const approvalsOn = el("panel-approvals").classList.contains("active");
   const key = ev.key.toLowerCase();
   if (key === "1") { showPanel("approvals"); return; }
@@ -489,19 +653,19 @@ document.addEventListener("keydown", ev => {
   if (key === "3") { showPanel("activity"); return; }
   if (key === "4") { showPanel("report"); return; }
   if (!approvalsOn || !queueItems.length) return;
-  if (key === "j" || key === "arrowdown") { ev.preventDefault(); setFocus(focusIdx + 1); }
-  else if (key === "k" || key === "arrowup") { ev.preventDefault(); setFocus(focusIdx - 1); }
+  if (key === "j" || key === "arrowdown") { ev.preventDefault(); setFocus(focusedIndex() + 1); }
+  else if (key === "k" || key === "arrowup") { ev.preventDefault(); setFocus(focusedIndex() - 1); }
   else if (key === "a") {
     ev.preventDefault();
-    const id = queueItems[focusIdx]?.id;
+    const id = queueItems[focusedIndex()]?.id;
     if (id) act(id, "approve");
   } else if (key === "s") {
     ev.preventDefault();
-    const id = queueItems[focusIdx]?.id;
+    const id = queueItems[focusedIndex()]?.id;
     if (id) act(id, "skip");
   } else if (key === "o") {
     ev.preventDefault();
-    const item = document.querySelectorAll(".q-item")[focusIdx];
+    const item = document.querySelectorAll(".q-item")[focusedIndex()];
     const d = item?.querySelector("details.preview");
     if (d) d.open = !d.open;
   }
@@ -514,11 +678,13 @@ el("stop").addEventListener("click", () => fetch("/stop", { method:"POST" }).the
   let tab = "approvals";
   try { tab = localStorage.getItem("emailcrm-tab") || "approvals"; } catch (_) {}
   await loadQueue();
+  await loadReport();
   if (queueItems.length) tab = "approvals";
   showPanel(tab);
   poll();
   setInterval(poll, 2000);
   setInterval(loadQueue, 5000);
+  setInterval(loadReport, 15000);
 })();
 </script>
 </body></html>
@@ -537,10 +703,51 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
+    def _dir_page(self, title, folder, pattern="*"):
+        import html as html_mod
+        rows = []
+        if folder.exists():
+            files = sorted(folder.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+            for p in files[:80]:
+                if p.is_file():
+                    rel = p.name
+                    rows.append(
+                        f'<li><a href="/files/raw?p={html_mod.escape(str(p), quote=True)}">'
+                        f'{html_mod.escape(rel)}</a></li>')
+        body = ("<ul>" + "".join(rows) + "</ul>") if rows else "<p>No files yet.</p>"
+        return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html_mod.escape(title)}</title>
+<style>body{{font:15px/1.5 Figtree,system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 20px;color:#14201a;background:#f3f6f4}}
+a{{color:#0f6e56}} ul{{padding-left:1.2rem}} li{{margin:6px 0}}</style></head>
+<body><h1>{html_mod.escape(title)}</h1>{body}
+<p><a href="/">← Panel</a></p></body></html>"""
+
+    def _safe_local_file(self, path_str):
+        """Only serve files under EmailCRM digest / briefs / logs dirs."""
+        try:
+            p = Path(path_str).expanduser().resolve()
+        except Exception:
+            return None
+        allowed_roots = []
+        for root in (config.DIGEST_DIR, config.QUEUE_PROSPECTS, config.LOG_DIR, config.ROOT):
+            try:
+                allowed_roots.append(root.expanduser().resolve())
+            except Exception:
+                allowed_roots.append(root)
+        for root in allowed_roots:
+            try:
+                p.relative_to(root)
+                return p if p.is_file() else None
+            except ValueError:
+                continue
+        return None
+
     def do_GET(self):
-        if self.path == "/":
+        path = self.path.split("?", 1)[0]
+        if path == "/":
             self._send(200, PAGE, "text/html; charset=utf-8")
-        elif self.path.startswith("/dashboard"):
+        elif path.startswith("/dashboard"):
             dash = config.ROOT / "dashboard.html"
             if dash.exists():
                 self._send(200, dash.read_text(), "text/html; charset=utf-8")
@@ -552,14 +759,45 @@ class Handler(BaseHTTPRequestHandler):
 background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margin-bottom:8px}</style>
 </head><body><strong>No dashboard yet</strong>Run the pipeline once to generate a report.</body></html>""",
                            "text/html; charset=utf-8")
-        elif self.path == "/queue":
+        elif path == "/queue":
             self._send(200, json.dumps(queue_store.pending()))
-        elif self.path == "/status":
+        elif path == "/status":
             if status.STATUS_FILE.exists():
                 self._send(200, status.STATUS_FILE.read_text())
             else:
                 self._send(200, json.dumps({"running": False, "stage": "idle",
                                             "tokens": status.tokens_snapshot()}))
+        elif path == "/report":
+            report = config.STATE_DIR / "last_report.json"
+            if report.exists():
+                self._send(200, report.read_text())
+            else:
+                self._send(200, json.dumps({"needs_n": 0, "needs_you": [], "drafts_n": 0,
+                                            "errors_n": 0, "briefs_n": 0}))
+        elif path == "/files/digest":
+            from datetime import date
+            today = config.DIGEST_DIR / f"{date.today().isoformat()}.md"
+            if today.exists():
+                self._send(200, today.read_text(), "text/markdown; charset=utf-8")
+            else:
+                self._send(200, self._dir_page("Digests", config.DIGEST_DIR, "*.md"),
+                           "text/html; charset=utf-8")
+        elif path == "/files/prospects":
+            self._send(200, self._dir_page("Prospect briefs", config.QUEUE_PROSPECTS, "*.md"),
+                       "text/html; charset=utf-8")
+        elif path == "/files/logs":
+            self._send(200, self._dir_page("Run logs", config.LOG_DIR, "*"),
+                       "text/html; charset=utf-8")
+        elif path == "/files/raw":
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            target = (qs.get("p") or [None])[0]
+            safe = self._safe_local_file(target) if target else None
+            if not safe:
+                self._send(404, "not found", "text/plain; charset=utf-8")
+            else:
+                ctype = "text/markdown; charset=utf-8" if safe.suffix == ".md" else "text/plain; charset=utf-8"
+                self._send(200, safe.read_text(errors="replace"), ctype)
         else:
             self._send(404, "{}")
 
@@ -573,8 +811,6 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
             self._send(200, '{"ok":true}')
         elif self.path == "/stop":
             status.STOP_FLAG.touch()
-            # graceful flag first; then kill the run process tree so in-flight
-            # claude subprocesses die too instead of blocking for minutes
             try:
                 if status.STATUS_FILE.exists():
                     pid = json.loads(status.STATUS_FILE.read_text()).get("pid")
@@ -585,6 +821,14 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
             except Exception:
                 pass
             self._send(200, '{"ok":true}')
+        elif self.path == "/undo":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or "{}")
+            item = queue_store.reopen(body.get("id"))
+            if not item:
+                self._send(404, '{"error":"nothing to undo"}')
+            else:
+                self._send(200, '{"ok":true}')
         elif self.path in ("/approve", "/skip"):
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length) or "{}")
@@ -601,13 +845,15 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
             try:
                 import crm
                 import gmail
+                subject = (body.get("subject") or item["subject"] or "").strip() or item["subject"]
+                body_html = body.get("body_html") if body.get("body_html") is not None else item["body_html"]
                 if item["kind"] == "reply" and item.get("thread_id"):
                     draft = gmail.create_reply_draft(
-                        to=item["email"], subject=item["subject"], body_html=item["body_html"],
+                        to=item["email"], subject=subject, body_html=body_html,
                         thread_id=item["thread_id"], in_reply_to=item.get("in_reply_to"))
                 else:
                     draft = gmail.create_draft(
-                        subject=item["subject"], body_html=item["body_html"], to=item["email"])
+                        subject=subject, body_html=body_html, to=item["email"])
                 queue_store.resolve(item_id, "approved", gmail_draft_id=draft["draft_id"])
                 if item["kind"] == "outreach":
                     from datetime import date, timedelta
@@ -630,7 +876,11 @@ background:#f3f6f4;text-align:center}strong{display:block;font-size:1.2rem;margi
                                       "last_touched": crm.now_iso(), "history": []},
                     })
                     crm.save(contacts)
-                self._send(200, json.dumps({"ok": True, "draft_id": draft["draft_id"]}))
+                self._send(200, json.dumps({
+                    "ok": True,
+                    "draft_id": draft["draft_id"],
+                    "draft_link": gmail.draft_link(draft.get("thread_id")),
+                }))
             except Exception as e:
                 self._send(500, json.dumps({"error": str(e)[:300]}))
         else:

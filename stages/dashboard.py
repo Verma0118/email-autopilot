@@ -4,6 +4,7 @@ Regenerated on every run. Single file, vanilla HTML/CSS, native <details>.
 Light/dark via prefers-color-scheme. Fonts load from Google when online.
 """
 import html
+import json
 import re
 from datetime import date, datetime
 
@@ -184,8 +185,9 @@ footer {
   margin-top:44px; color:var(--ink3); font-size:.8rem;
   border-top:1px solid var(--line); padding-top:16px; line-height:1.9;
 }
-.local-only { display:none; }
+.local-only, .panel-only { display:none; }
 html.is-local .local-only { display:inline; }
+html.is-panel .panel-only { display:inline; }
 """
 
 # Lucide-style inline SVG icons (stroke, 24 viewBox, sized 18)
@@ -307,6 +309,10 @@ def render(contacts, report, llm_calls, dry_run=False):
 <footer class="rise">
   Status counts: {_esc(counts)}<br>
   <a href="https://mail.google.com/mail/u/0/#drafts">Gmail drafts</a>
+  <span class="panel-only"> ·
+  <a href="/files/digest" target="_blank" rel="noopener">Today's digest</a> ·
+  <a href="/files/prospects" target="_blank" rel="noopener">Prospect briefs</a> ·
+  <a href="/files/logs" target="_blank" rel="noopener">Run logs</a></span>
   <span class="local-only"> ·
   <a href="file://{config.DIGEST_DIR}/{date.today().isoformat()}.md">Today's digest</a> ·
   <a href="file://{config.QUEUE_PROSPECTS}">Prospect briefs</a> ·
@@ -314,8 +320,22 @@ def render(contacts, report, llm_calls, dry_run=False):
 </footer>
 <script>
 if (location.protocol === "file:") document.documentElement.classList.add("is-local");
+if (location.hostname === "127.0.0.1" || location.hostname === "localhost")
+  document.documentElement.classList.add("is-panel");
 </script>
 </body></html>"""
+
+    config.STATE_DIR.mkdir(parents=True, exist_ok=True)
+    (config.STATE_DIR / "last_report.json").write_text(json.dumps({
+        "generated": datetime.now().isoformat(timespec="seconds"),
+        "needs_you": needs_you,
+        "needs_n": needs_n,
+        "drafts_n": len(drafts_today),
+        "errors_n": len(errors),
+        "briefs_n": briefs_queued,
+        "open_conversations": counts.get("replied", 0) + counts.get("converted", 0),
+        "bounces": counts.get("bounced", 0),
+    }, indent=1))
 
     path = config.ROOT / "dashboard.html"
     path.write_text(page)
