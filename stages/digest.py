@@ -59,11 +59,13 @@ def run(contacts, report, llm_calls, dry_run=False):
     n_br = len(pr.get("briefs") or [])
     summary = (f"{n_q} awaiting approval, {n_re} replies, {n_br} briefs"
                + (f", {len(all_errors)} errors" if all_errors else ""))
-    try:
-        subprocess.run(
-            ["osascript", "-e",
-             f'display notification "{summary}" with title "EmailCRM Autopilot"'],
-            timeout=10)
-    except Exception:
-        pass
+    if not dry_run:
+        try:
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification "{summary}" with title "EmailCRM Autopilot" '
+                 f'sound name "Glass"'],
+                timeout=10)
+        except Exception:
+            pass
     return path, summary
