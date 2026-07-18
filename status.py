@@ -211,3 +211,16 @@ def tokens_snapshot():
             "limit_hit": limited,
             "limit_reset": data.get("limit_reset"),
             "window_started": datetime.fromtimestamp(data["window_start"]).strftime("%H:%M")}
+
+
+def budget_pct():
+    """Autopilot meter 0–100. 100 if Anthropic session limit is latched."""
+    return float(tokens_snapshot().get("pct") or 0)
+
+
+def meter_allows(max_pct):
+    """True if we still have room under max_pct (0–1 fraction)."""
+    snap = tokens_snapshot()
+    if snap.get("limit_hit"):
+        return False
+    return budget_pct() < (max_pct * 100.0)

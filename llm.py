@@ -34,6 +34,10 @@ def _extract_json(text):
     return json.loads(m.group(0))
 
 
+def calls_remaining():
+    return max(0, config.LLM_CALL_BUDGET - _calls_made)
+
+
 def call(prompt, use_exa=False, max_turns=8):
     """Run claude -p, return parsed JSON dict. Raises LLMError."""
     global _calls_made, llm_down
@@ -94,11 +98,16 @@ def call(prompt, use_exa=False, max_turns=8):
 
 
 def call_with_retry(prompt, use_exa=False, retry_suffix=None, validate=None):
-    """One call plus one retry. validate(result) -> list of error strings."""
+    """One call; retry only on lint/validation failure when meter still has room."""
     result = call(prompt, use_exa=use_exa)
     errors = validate(result) if validate else []
     if not errors:
         return result, []
+    # Skip expensive second call when we're already tight on budget
+    if (not status.meter_allows(config.RETRY_METER_MAX_PCT)
+            or calls_remaining() < 1
+            or llm_down):
+        return result, errors
     feedback = (retry_suffix or "Your previous output had these problems, fix ALL of them:") + "\n- " + "\n- ".join(errors)
     result = call(prompt + "\n\n" + feedback, use_exa=use_exa)
     errors = validate(result) if validate else []

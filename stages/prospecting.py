@@ -90,18 +90,42 @@ Generated: {date.today().isoformat()} | Segment: {candidate.get('segment')}
     return jpath
 
 
+def _active_tracks(tracks):
+    """Rotate ICP tracks daily; only run SCOUT_MAX_TRACKS_PER_RUN per Full/scout."""
+    items = list(tracks.items())
+    if not items:
+        return []
+    n = max(1, int(getattr(config, "SCOUT_MAX_TRACKS_PER_RUN", 1) or 1))
+    n = min(n, len(items))
+    start = date.today().toordinal() % len(items)
+    return [items[(start + i) % len(items)] for i in range(n)]
+
+
 def run(contacts, report, cap_override, log, dry_run=False):
-    r = report.setdefault("prospecting", {"briefs": [], "rejected": [], "errors": []})
+    r = report.setdefault("prospecting", {
+        "briefs": [], "rejected": [], "errors": [], "skipped": []})
+    if not status.meter_allows(config.SCOUT_METER_MAX_PCT):
+        r["skipped"].append(
+            f"meter {status.budget_pct():.0f}% — scout gate "
+            f"{config.SCOUT_METER_MAX_PCT * 100:.0f}%")
+        return r
+
     icp = yaml.safe_load(config.ICP_FILE.read_text())
     tracks = icp.get("tracks", {})
+    active = _active_tracks(tracks)
+    active_keys = {k for k, _ in active}
     ledger = _ledger()
     crm_keys = {_norm(c["name"], c.get("company", "")) for c in contacts}
     written = {k: 0 for k in tracks}
+    brief_turns = getattr(config, "SCOUT_BRIEF_MAX_TURNS", 8)
+    discovery_turns = getattr(config, "SCOUT_DISCOVERY_MAX_TURNS", 10)
 
     def consider(candidate, track_key):
         track = tracks[track_key]
         cap = cap_override or track.get("daily_cap", 3)
         if written[track_key] >= cap:
+            return
+        if not status.meter_allows(config.SCOUT_METER_MAX_PCT):
             return
         key = _norm(candidate.get("name", ""), candidate.get("company", ""))
         if not key or key in crm_keys or key in ledger:
@@ -110,7 +134,8 @@ def run(contacts, report, cap_override, log, dry_run=False):
         status.update(detail=f"researching prospect: {candidate.get('name')} ({candidate.get('company')})",
                       stream=track["label"])
         try:
-            brief = llm.call(_brief_prompt(candidate, track_key, track), use_exa=True, max_turns=12)
+            brief = llm.call(_brief_prompt(candidate, track_key, track),
+                             use_exa=True, max_turns=brief_turns)
         except llm.LLMError as e:
             r["errors"].append(f"{candidate.get('name')}: {e}")
             return  # transient: retry next run
@@ -127,18 +152,22 @@ def run(contacts, report, cap_override, log, dry_run=False):
         log({"action": "prospect_considered", "candidate": candidate.get("name"),
              "track": track_key, "outcome": ledger.get(key)})
 
-    # seeds first (track-tagged)
+    # seeds first (only for today's active tracks)
     for seed in icp.get("seed_candidates", []):
         if llm.llm_down:
             break
         tk = seed.get("track", "startup_discovery")
-        if tk in tracks:
+        if tk in active_keys:
             consider(seed, tk)
 
-    # one discovery call per track per run, rotating that track's segments daily
+    # one discovery call per active track, rotating that track's segments daily
     discovery_template = (config.PROMPT_DIR / "prospect_discovery.md").read_text()
-    for track_key, track in tracks.items():
+    for track_key, track in active:
         if llm.llm_down:
+            break
+        if not status.meter_allows(config.SCOUT_METER_MAX_PCT):
+            r["skipped"].append(
+                f"stopped mid-scout: meter {status.budget_pct():.0f}%")
             break
         cap = cap_override or track.get("daily_cap", 3)
         if written[track_key] >= cap:
@@ -153,12 +182,15 @@ def run(contacts, report, cap_override, log, dry_run=False):
             "<<TRACK_WHO>>": track.get("who"), "<<TRACK_WHO_NOT>>": track.get("who_not"),
         })
         try:
-            found = llm.call(prompt, use_exa=True, max_turns=15)
+            found = llm.call(prompt, use_exa=True, max_turns=discovery_turns)
             for candidate in (found.get("candidates") or [])[:10]:
                 candidate.setdefault("segment", seg["name"])
                 consider(candidate, track_key)
         except llm.LLMError as e:
             r["errors"].append(f"discovery ({track_key}/{seg['name']}): {e}")
+
+    if active_keys:
+        log({"action": "scout_tracks", "tracks": sorted(active_keys)})
 
     _save_ledger(ledger, dry_run)
     return r

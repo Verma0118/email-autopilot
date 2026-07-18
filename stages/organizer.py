@@ -1,6 +1,8 @@
 """Organizer Agent: turn passing scout briefs into send-ready outreach emails
-in the approval queue, grouped by track. Runs right after Scout (in parallel
-with the reply path on a full run)."""
+in the approval queue, grouped by track.
+
+On a full run this drains waiting briefs before scout (priority) and again
+after scout if new briefs were written."""
 import json
 import re
 
@@ -33,8 +35,32 @@ def _subject_for(email_type):
     return config.FIXED_SUBJECTS.get(email_type)
 
 
+def _brief_needs_organize(rec):
+    if rec.get("organized"):
+        return False
+    address = (rec.get("brief", {}).get("email") or {}).get("address")
+    return not queue_store.has_pending_for(address)
+
+
+def waiting_count():
+    """Unorganized prospect briefs that still need an outreach draft."""
+    n = 0
+    for path in config.QUEUE_PROSPECTS.glob("*.json"):
+        try:
+            rec = json.loads(path.read_text())
+        except Exception:
+            continue
+        if _brief_needs_organize(rec):
+            n += 1
+    return n
+
+
 def run(contacts, report, log, dry_run=False):
     r = report.setdefault("organizer", {"queued": [], "skipped": [], "errors": []})
+    if not status.meter_allows(config.ORGANIZE_METER_MAX_PCT):
+        r["skipped"].append(
+            f"meter {status.budget_pct():.0f}% — organize deferred")
+        return r
     status.update(stage="organizer", detail="collecting scout briefs")
     template = (config.PROMPT_DIR / "outreach_draft.md").read_text()
     calendar_url = _calendar_url()
@@ -42,9 +68,11 @@ def run(contacts, report, log, dry_run=False):
     briefs = sorted(config.QUEUE_PROSPECTS.glob("*.json"))
     todo = []
     for path in briefs:
-        rec = json.loads(path.read_text())
-        if not rec.get("organized") and not queue_store.has_pending_for(
-                (rec.get("brief", {}).get("email") or {}).get("address")):
+        try:
+            rec = json.loads(path.read_text())
+        except Exception:
+            continue
+        if _brief_needs_organize(rec):
             todo.append((path, rec))
 
     for path, rec in todo:

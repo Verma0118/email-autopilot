@@ -11,16 +11,17 @@ Usage:
 Drafts only. This system has no gmail.send scope and cannot send email.
 
 Pipeline (full run):
-  1) Inbox sync (fast, no LLM)
-  2) Parallel: reply+bounce | scout→organize | rundown refresh
-  3) Digest + dashboard
+  1) Inbox sync + deterministic rundown (no LLM)
+  2) Serial LLM by priority (token-efficient):
+     reply → organize (drain waiting) → scout (if meter OK + few waiting)
+     → organize (new briefs) → bounce → cold followups (if enabled)
+  3) Digest + publish
 """
 import argparse
 import json
 import os
 import subprocess
 import sys
-import threading
 import time
 import traceback
 from datetime import date, datetime
@@ -70,6 +71,13 @@ def make_logger(dry_run):
         with open(path, "a") as f:
             f.write(json.dumps(record) + "\n")
     return log
+
+
+def _skip(report, section, reason, log):
+    bucket = report.setdefault(section, {})
+    bucket.setdefault("skipped", []).append(reason)
+    log({"action": "stage_skipped", "stage": section, "reason": reason})
+    status.update(detail=reason)
 
 
 def main():
@@ -147,55 +155,64 @@ def main():
             guarded("inbox rundown", lambda: inbox_agent.write_rundown(
                 contacts, report, log, dry_run=args.dry_run))
 
-        # —— Phase 2: parallel work ——
-        # reply path owns CRM-ish reply drafts; scout→organize produces outreach
-        # drafts as soon as briefs exist (no waiting for reply to finish).
-        def thread_replies():
-            try:
-                if want("reply"):
-                    guarded("reply agent", lambda: reply_agent.run(
-                        contacts, report, args.cap or config.NUDGE_DAILY_CAP, log,
-                        dry_run=args.dry_run))
-                if want("bounce"):
-                    guarded("bounce retry", lambda: bounce_retry.run(
-                        contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log,
-                        dry_run=args.dry_run))
-                if stage == "followup" or (stage is None and config.COLD_FOLLOWUPS_ENABLED):
-                    guarded("cold follow-ups", lambda: followups.run(
-                        contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log,
-                        dry_run=args.dry_run))
-            except status.Stopped:
-                pass
+        # —— Phase 2: serial LLM by priority (saves tokens vs parallel) ——
+        # reply first (CRM value), then drain waiting briefs, then scout only
+        # if the meter still has room and the organize queue isn't backed up.
+        if want("reply"):
+            guarded("reply agent", lambda: reply_agent.run(
+                contacts, report, args.cap or config.NUDGE_DAILY_CAP, log,
+                dry_run=args.dry_run))
 
-        def thread_scout_organize():
-            try:
-                if want("scout"):
-                    guarded("scout agent", lambda: prospecting.run(
-                        contacts, report, args.cap, log, dry_run=args.dry_run))
-                # Organize right after scout so drafts appear while replies continue
-                if want("organize"):
-                    guarded("organizer", lambda: organizer.run(
-                        contacts, report, log, dry_run=args.dry_run))
-            except status.Stopped:
-                pass
-
-        workers = []
-        if want("reply") or want("bounce") or stage == "followup" or (
-                stage is None and config.COLD_FOLLOWUPS_ENABLED):
-            workers.append(threading.Thread(target=thread_replies, name="replies"))
-        if want("scout") or want("organize"):
-            # organize-only stage still works (scout skipped)
-            if stage == "organize":
+        if want("organize"):
+            if status.meter_allows(config.ORGANIZE_METER_MAX_PCT):
                 guarded("organizer", lambda: organizer.run(
                     contacts, report, log, dry_run=args.dry_run))
             else:
-                workers.append(threading.Thread(
-                    target=thread_scout_organize, name="scout+organize"))
+                _skip(report, "organizer",
+                      f"meter {status.budget_pct():.0f}% — organize deferred", log)
 
-        for t in workers:
-            t.start()
-        for t in workers:
-            t.join()
+        scout_ran = False
+        if want("scout"):
+            waiting = organizer.waiting_count()
+            skip_reason = None
+            # Full-run only: prefer draining briefs over mining more
+            if stage is None and waiting >= config.SCOUT_SKIP_IF_BRIEFS_WAITING:
+                skip_reason = (f"skipping scout: {waiting} briefs waiting "
+                               f"(≥{config.SCOUT_SKIP_IF_BRIEFS_WAITING})")
+            elif not status.meter_allows(config.SCOUT_METER_MAX_PCT):
+                skip_reason = (f"skipping scout: meter {status.budget_pct():.0f}% "
+                               f"(gate {config.SCOUT_METER_MAX_PCT * 100:.0f}%)")
+            elif llm.llm_down:
+                skip_reason = "skipping scout: LLM down for this run"
+            if skip_reason:
+                _skip(report, "prospecting", skip_reason, log)
+            else:
+                guarded("scout agent", lambda: prospecting.run(
+                    contacts, report, args.cap, log, dry_run=args.dry_run))
+                scout_ran = True
+
+        # Second organize pass after scout produced new briefs
+        if scout_ran and want("organize"):
+            if status.meter_allows(config.ORGANIZE_METER_MAX_PCT):
+                guarded("organizer", lambda: organizer.run(
+                    contacts, report, log, dry_run=args.dry_run))
+            else:
+                _skip(report, "organizer",
+                      f"meter {status.budget_pct():.0f}% — post-scout organize deferred", log)
+
+        if want("bounce"):
+            if status.meter_allows(config.BOUNCE_METER_MAX_PCT):
+                guarded("bounce retry", lambda: bounce_retry.run(
+                    contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log,
+                    dry_run=args.dry_run))
+            else:
+                _skip(report, "bounce_retry",
+                      f"meter {status.budget_pct():.0f}% — bounce deferred", log)
+
+        if stage == "followup" or (stage is None and config.COLD_FOLLOWUPS_ENABLED):
+            guarded("cold follow-ups", lambda: followups.run(
+                contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log,
+                dry_run=args.dry_run))
 
         status.update(stage="digest", detail="writing digest + dashboard")
         path, summary = digest.run(contacts, report, llm.calls_made(), dry_run=args.dry_run)

@@ -46,6 +46,23 @@ LLM_TIMEOUT = 300
 SESSION_TOKEN_BUDGET = 200_000
 TOKEN_WARN_PCT = 0.60
 
+# —— Token-efficiency gates (Full run uses these) ——
+# Skip scout when autopilot meter is already this high (0–1).
+SCOUT_METER_MAX_PCT = 0.45
+# Skip organize LLM work when meter is this high (still ok to no-op).
+ORGANIZE_METER_MAX_PCT = 0.90
+# Skip bounce research when meter is this high.
+BOUNCE_METER_MAX_PCT = 0.85
+# If this many unorganized briefs are waiting, organize them and skip scout.
+SCOUT_SKIP_IF_BRIEFS_WAITING = 2
+# Cheaper scout tool loops (was 12 / 15).
+SCOUT_BRIEF_MAX_TURNS = 8
+SCOUT_DISCOVERY_MAX_TURNS = 10
+# Only run discovery for this many ICP tracks per Full run (rotate by day).
+SCOUT_MAX_TRACKS_PER_RUN = 1
+# Don't spend a second LLM call on lint retry when meter is already this high.
+RETRY_METER_MAX_PCT = 0.88
+
 PANEL_PORT = 8787
 
 FOLLOW_UP_DAYS = 7
