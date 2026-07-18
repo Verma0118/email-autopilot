@@ -26,9 +26,10 @@ SHELL_TEMPLATE = """<!doctype html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@450;550;650;700&family=Fraunces:opsz,wght@9..144,550;9..144,650&display=swap" rel="stylesheet">
 <style>
+html { color-scheme: light; }
 :root {
-  --bg0:#f6faf8; --bg1:#e8f2ed;
-  --surface:rgba(255,255,255,.78); --surface-solid:#ffffff;
+  --bg0:#f8fbfa; --bg1:#eef6f2;
+  --surface:rgba(255,255,255,.82); --surface-solid:#ffffff;
   --ink:#132019; --ink2:#5a6b64; --ink3:#879890;
   --line:rgba(18,40,32,.1); --accent:#0d7a5f; --accent-ink:#fff;
   --bad:#b42318; --ease:cubic-bezier(0.23,1,0.32,1);
@@ -36,16 +37,6 @@ SHELL_TEMPLATE = """<!doctype html>
   --display:"Fraunces", Georgia, serif;
   --frost:blur(18px) saturate(1.4);
   --shadow:0 1px 2px rgba(18,40,32,.04), 0 16px 40px rgba(18,40,32,.08);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg0:#0e1613; --bg1:#141c18;
-    --surface:rgba(22,32,28,.78); --surface-solid:#16201c;
-    --ink:#e8f0ec; --ink2:#9aada4; --ink3:#6d7c74;
-    --line:rgba(200,220,210,.12); --accent:#3ecf9a; --accent-ink:#062016;
-    --bad:#f97066;
-    --shadow:0 1px 2px rgba(0,0,0,.25), 0 16px 40px rgba(0,0,0,.35);
-  }
 }
 * { box-sizing:border-box; margin:0; }
 body {
@@ -56,14 +47,6 @@ body {
     radial-gradient(900px 420px at 20% 0%, rgba(13,122,95,.12), transparent 55%),
     radial-gradient(700px 360px at 100% 100%, rgba(62,207,154,.08), transparent 50%),
     linear-gradient(165deg, var(--bg0), var(--bg1));
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background:
-      radial-gradient(900px 420px at 20% 0%, rgba(62,207,154,.14), transparent 55%),
-      radial-gradient(700px 360px at 100% 100%, rgba(13,122,95,.08), transparent 50%),
-      linear-gradient(165deg, var(--bg0), var(--bg1));
-  }
 }
 form {
   background:var(--surface); border:1px solid var(--line); border-radius:20px;
