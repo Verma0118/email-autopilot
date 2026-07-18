@@ -49,12 +49,23 @@ def run(contacts, report, cap, log, dry_run=False):
                       detail=f"checking conversation: {c['name']} ({c['company']})",
                       stream=config.STREAM_LABELS.get(c.get("email_type"), "reply"))
         try:
-            thread, last_us, subject = thread_text(c["gmail_thread_id"])
+            thread, last_us, subject, meta = thread_text(c["gmail_thread_id"])
         except Exception as e:
             r["errors"].append(f"{c['name']}: thread fetch failed: {e}")
             continue
+        # Deterministic skips — no Claude tokens
+        if meta.get("last_from_us"):
+            r["skipped"].append(f"{c['name']}: we already have the last word")
+            continue
+        if meta.get("ooo"):
+            r["skipped"].append(f"{c['name']}: out-of-office auto-reply")
+            continue
         if last_us and (today - last_us).days < 3:
             r["skipped"].append(f"{c['name']}: we wrote {last_us}, too soon")
+            continue
+        if not llm.available():
+            r["skipped"].append(
+                f"{c['name']}: Claude unavailable, reply draft deferred")
             continue
         expected_subject = f"Re: {subject}"
         prompt = (template

@@ -20,6 +20,21 @@ class LLMError(Exception):
     pass
 
 
+def available():
+    """False when Claude should not be called (limit, hard cap, or marked down)."""
+    global llm_down
+    if llm_down:
+        return False
+    snap = status.tokens_snapshot()
+    if snap.get("limit_hit"):
+        llm_down = True
+        return False
+    if status.over_budget():
+        llm_down = True
+        return False
+    return True
+
+
 def _clean_env():
     env = dict(os.environ)
     env.pop("ANTHROPIC_API_KEY", None)  # force Pro subscription OAuth
@@ -42,15 +57,20 @@ def call(prompt, use_exa=False, max_turns=8):
     """Run claude -p, return parsed JSON dict. Raises LLMError."""
     global _calls_made, llm_down
     status.check_stop()
-    if llm_down:
+    if not available():
+        snap = status.tokens_snapshot()
+        if snap.get("limit_hit"):
+            reset = snap.get("limit_reset") or "reset"
+            raise LLMError(
+                f"Claude session limit already latched (resets {reset}); "
+                "inbox sync still works, drafts wait until reset")
+        if status.over_budget():
+            hard = int(getattr(config, "TOKEN_HARD_PCT", 0.60) * 100)
+            raise LLMError(
+                f"autopilot token cap ({hard}% of budget) reached, LLM stages stopped")
         raise LLMError("LLM marked down for this run")
     if _calls_made >= config.LLM_CALL_BUDGET:
         raise LLMError(f"call budget ({config.LLM_CALL_BUDGET}) exhausted")
-    if status.over_budget():
-        llm_down = True
-        hard = int(getattr(config, "TOKEN_HARD_PCT", 0.60) * 100)
-        raise LLMError(
-            f"autopilot token cap ({hard}% of budget) reached, LLM stages stopped")
     _calls_made += 1
 
     mcp_config = config.MCP_EXA if use_exa else config.MCP_EMPTY

@@ -5,7 +5,7 @@ function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
   if (limitHit) {
     return {
       title: "Session paused",
-      body: "Claude hit a session limit. Wait for reset, then run Triage.",
+      body: "Claude hit a session limit. Inbox sync still works. Wait for reset, then run Triage for drafts.",
       stage: "triage",
       label: "Run Triage",
     };
@@ -237,8 +237,8 @@ export default function Overview({
   });
   let errLede = "";
   if (errors.length) {
-    if (limits.length || marked.length) {
-      errLede = "Claude hit a session limit. Wait for reset, then hit Run again.";
+    if (limits.length || marked.length || tokens.limit_hit) {
+      errLede = "Claude is paused, so draft stages waited. Inbox sync and Approvals still work without tokens.";
       if (marked.length) errLede += " Skipped " + marked.length + " LLM step" + (marked.length === 1 ? "" : "s") + ".";
     } else {
       errLede = "Something failed last run.";
@@ -298,6 +298,13 @@ export default function Overview({
               value={Math.min(100, tokPct)}
             />
           </div>
+        </div>
+      )}
+
+      {tokens.limit_hit && (
+        <div className="info-banner">
+          <strong>Claude paused.</strong>
+          <span> Inbox sync, rundown, Approvals, and Update still work with no tokens. Reply / Organize / Scout / Bounce wait until reset.</span>
         </div>
       )}
 
