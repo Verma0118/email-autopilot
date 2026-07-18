@@ -19,26 +19,26 @@ function getInitialTab() {
   return "approvals";
 }
 
-function buildCostHint(tokPct, briefsN, limitHit, hardPct = 60) {
+function buildCostHint(tokPct, briefsN, limitHit, hardPct = 50) {
   if (limitHit) {
-    return { short: "Paused, wait for reset", text: "Claude session limit hit. Wait, then run Triage." };
+    return { short: "Paused, wait for reset", text: "Claude session limit hit. Wait, then Check email." };
   }
   if (tokPct >= hardPct) {
     return {
       short: `Cap ${Math.round(hardPct)}%, LLM stopped`,
-      text: `Autopilot hit its ${Math.round(hardPct)}% token cap. Non-LLM work only until the window resets.`,
+      text: `Autopilot hit its ${Math.round(hardPct)}% token cap. Inbox sync still works; drafts wait until the window resets.`,
     };
   }
-  if (tokPct >= 45) {
+  if (tokPct >= 32) {
     return {
       short: `Meter ${Math.round(tokPct)}%, skip Scout`,
-      text: `Autopilot meter at ${Math.round(tokPct)}% (cap ${Math.round(hardPct)}%). Run Organize or Triage instead of Scout.`,
+      text: `Meter at ${Math.round(tokPct)}% (cap ${Math.round(hardPct)}%). Prefer Check email or Organize; Scout stays off above 32%.`,
     };
   }
   if (briefsN >= 2) {
     return {
       short: `${briefsN} briefs, Organize`,
-      text: `${briefsN} briefs waiting. Run Organize before Scout.`,
+      text: `${briefsN} briefs waiting. Organize from the Check email menu before Scout.`,
     };
   }
   return null;
@@ -209,7 +209,7 @@ export default function App() {
 
   const tokens = status.tokens || {};
   const costHint = buildCostHint(
-    tokens.pct || 0, briefsN, !!tokens.limit_hit, tokens.hard_pct != null ? tokens.hard_pct : 60);
+    tokens.pct || 0, briefsN, !!tokens.limit_hit, tokens.hard_pct != null ? tokens.hard_pct : 50);
 
   async function handleUpdate() {
     addToast("Pulling latest from GitHub…");

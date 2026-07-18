@@ -1,18 +1,15 @@
-Find NEW outreach candidates for Aarav Verma, a UIUC Aerospace Engineering sophomore. Use the exa search tools.
+Find NEW outreach candidates for Aarav Verma (UIUC Aerospace sophomore). Use exa search tools.
 
-## Target segment today
-<<SEGMENT_NAME>>: <<SEGMENT_BRIEF>>
+Segment: <<SEGMENT_NAME>> — <<SEGMENT_BRIEF>>
 
-## Who qualifies
+Qualifies:
 <<TRACK_WHO>>
 
-## Who does NOT qualify
+Does NOT qualify:
 <<TRACK_WHO_NOT>>
 - Anyone without a findable current role
 
-## why_icp guidance
-<<WHY_ICP_HINT>>
+why_icp: <<WHY_ICP_HINT>>
 
-## Output
-Output ONLY one JSON object with up to 10 candidates:
-{"candidates": [{"name": "", "role": "", "company": "", "linkedin_url": "", "source_url": "", "why_icp": "one sentence per the why_icp guidance"}]}
+Output ONLY JSON with at most 4 candidates:
+{"candidates": [{"name": "", "role": "", "company": "", "linkedin_url": "", "source_url": "", "why_icp": "one sentence"}]}

@@ -1,31 +1,22 @@
-Draft a first-touch outreach email for Aarav Verma using this researched brief. The email goes to an approval queue; write the final send-ready text.
+Draft a first-touch outreach email for Aarav Verma from this brief. Output goes to Approvals.
 
-## Sender identity
-Aarav Verma, Sophomore, Aerospace Engineering major with Computer Science minor, University of Illinois Urbana-Champaign. Involvements available (pick per rules below, never all): Illinois Space Society (Space Shot structural engineer), GHOST Electric Motorcycles, NOBE (Project Manager).
+Sender: Aarav Verma, sophomore, Aerospace + CS minor, UIUC. Involvements (pick per track rules, never all): Illinois Space Society (Space Shot structural), GHOST Electric Motorcycles, NOBE (Project Manager).
 
-## Target
-- Name: <<NAME>>
-- Role: <<ROLE>>
-- Company: <<COMPANY>>
-- Track: <<TRACK>> (email_type: <<EMAIL_TYPE>>)
-- Why ICP: <<WHY_ICP>>
-- Company signal: <<SIGNAL>>
-- Citable hooks (use the strongest ONE, phrased conversationally):
+Target: <<NAME>> · <<ROLE>> · <<COMPANY>>
+Track: <<TRACK>> (<<EMAIL_TYPE>>) · Why ICP: <<WHY_ICP>>
+Signal: <<SIGNAL>>
+Hooks (use the strongest ONE):
 <<HOOKS>>
 
-## Subject (EXACT, do not vary)
-<<SUBJECT>>
+Subject (exact): <<SUBJECT>>
 
-## Track rules (this email_type only)
+Track rules:
 <<TRACK_RULES>>
 
-## CTA
-One CTA only. Calendar link to use (as <a href>Calendar Invite</a>): <<CALENDAR_URL>>
-If it says NONE_FOUND, offer to send a calendar invite instead. Never invent a URL.
+CTA: one only. Calendar link as <a href>Calendar Invite</a>: <<CALENDAR_URL>>
+If NONE_FOUND, offer to send a calendar invite. Never invent a URL.
 
-## Hard constraints (violations = automatic rejection)
-NO em/en dashes. NO hyphen as clause connector. NO contractions. NO semicolons. Max 2 consecutive sentences starting with "I". No bullets or bold in the body. No emojis. Banned: "would love to", "excited to", "passionate about", "reach out", "I hope this email finds you well". Body is simple HTML paragraphs.
+Hard rejects: em/en dashes; hyphen as clause connector; contractions; semicolons; max 2 consecutive "I" sentences; no bullets/bold/emojis; banned "would love to", "excited to", "passionate about", "reach out", "I hope this email finds you well". Simple HTML paragraphs.
 
-## Output
-Output ONLY one JSON object:
-{"subject": "<<SUBJECT>>", "body_html": "<p>...</p>", "hook_used": "one line: which hook you used"}
+Output ONLY JSON:
+{"subject": "<<SUBJECT>>", "body_html": "<p>...</p>", "hook_used": "one line"}

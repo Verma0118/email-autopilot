@@ -96,6 +96,12 @@ def run(contacts, report, log, dry_run=False):
         if _brief_needs_organize(rec):
             todo.append((path, rec))
 
+    max_n = int(getattr(config, "ORGANIZE_MAX_PER_RUN", 0) or 0)
+    if max_n > 0 and len(todo) > max_n:
+        r["skipped"].append(
+            f"{len(todo) - max_n} briefs deferred (cap {max_n}/run)")
+        todo = todo[:max_n]
+
     for path, rec in todo:
         status.check_stop()
         cand, brief = rec["candidate"], rec["brief"]

@@ -27,18 +27,18 @@ function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
       label: "Organize briefs",
     };
   }
-  if (needsN > 0 || tokPct < 45) {
+  if (tokPct >= 32) {
     return {
-      title: "Check email",
-      body: "Sync inbox, draft replies, and catch bounces.",
+      title: "Meter is getting full",
+      body: `Autopilot meter at ${Math.round(tokPct)}%. Prefer Check email; Scout stays gated.`,
       stage: "triage",
       label: "Check email",
     };
   }
-  if (tokPct >= 45) {
+  if (needsN > 0 || tokPct < 32) {
     return {
-      title: "Meter is getting full",
-      body: `Autopilot meter at ${Math.round(tokPct)}%. Prefer Check email over Scout.`,
+      title: "Check email",
+      body: "Sync inbox, draft replies, and catch bounces.",
       stage: "triage",
       label: "Check email",
     };
@@ -178,9 +178,9 @@ export default function Overview({
 }) {
   const tokens = status.tokens || {};
   const tokPct = tokens.pct || 0;
-  const tokClass = tokens.limit_hit || tokPct >= 100 ? " bad" : (tokPct >= 60 ? " warn" : "");
+  const hardPct = tokens.hard_pct != null ? tokens.hard_pct : 50;
+  const tokClass = tokens.limit_hit || tokPct >= 100 ? " bad" : (tokPct >= hardPct ? " warn" : "");
   const tokDisplay = tokens.limit_hit ? "PAUSED" : (tokPct + "%");
-  const hardPct = tokens.hard_pct != null ? tokens.hard_pct : 60;
   const tokDetail = tokens.limit_hit
     ? "Claude session limit. Try again after " + (tokens.limit_reset || "reset")
     : [
@@ -261,7 +261,7 @@ export default function Overview({
       </div>
       {!status.running && (
         <p className="section-lede">
-          Meter, needs-you items, and a clean inbox snapshot. Day-to-day work lives in Inbox.
+          Token meter and what needs a look. Day-to-day review stays in Inbox.
         </p>
       )}
 

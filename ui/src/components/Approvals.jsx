@@ -205,6 +205,11 @@ function QueueItem({
 
   const previewHtml = sanitizeHtml(item.body_html);
   const kindLabel = KIND_LABELS[item.kind] || item.kind;
+  const teaser = String(item.body_html || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 110);
 
   return (
     <li
@@ -222,68 +227,74 @@ function QueueItem({
         <span className="sub">{item.company}</span>
       </div>
       {item.why && <p className="q-why">{item.why}</p>}
-      <ContextBlock item={item} />
-      {threadHref && (
-        <a className="thread-link" href={threadHref} target="_blank" rel="noopener">
-          Open thread in Gmail
-        </a>
-      )}
-      <div className="q-fields">
-        <div>
-          <label htmlFor={`email-${item.id}`}>To</label>
-          <input
-            ref={emailRef}
-            className="email-edit"
-            id={`email-${item.id}`}
-            type="email"
-            defaultValue={item.email || ""}
-            autoComplete="off"
-            onChange={scheduleSave}
-          />
-        </div>
-        <div>
-          <label htmlFor={`subj-${item.id}`}>Subject</label>
-          <input
-            ref={subjectRef}
-            className="subj-edit"
-            id={`subj-${item.id}`}
-            defaultValue={item.subject || ""}
-            onChange={scheduleSave}
-          />
-        </div>
-      </div>
+      {!focused && teaser && <p className="body-teaser">{teaser}{teaser.length >= 110 ? "…" : ""}</p>}
 
-      {!editing && (
-        <div
-          className="body-preview"
-          dangerouslySetInnerHTML={{ __html: previewHtml || "<p><em>Empty body</em></p>" }}
-        />
-      )}
+      {focused && (
+        <>
+          <ContextBlock item={item} />
+          {threadHref && (
+            <a className="thread-link" href={threadHref} target="_blank" rel="noopener">
+              Open thread in Gmail
+            </a>
+          )}
+          <div className="q-fields">
+            <div>
+              <label htmlFor={`email-${item.id}`}>To</label>
+              <input
+                ref={emailRef}
+                className="email-edit"
+                id={`email-${item.id}`}
+                type="email"
+                defaultValue={item.email || ""}
+                autoComplete="off"
+                onChange={scheduleSave}
+              />
+            </div>
+            <div>
+              <label htmlFor={`subj-${item.id}`}>Subject</label>
+              <input
+                ref={subjectRef}
+                className="subj-edit"
+                id={`subj-${item.id}`}
+                defaultValue={item.subject || ""}
+                onChange={scheduleSave}
+              />
+            </div>
+          </div>
 
-      <details
-        ref={detailsRef}
-        className="preview"
-        onToggle={(ev) => {
-          if (ev.currentTarget.open !== editing) onToggleEdit(ev.currentTarget.open);
-        }}
-      >
-        <summary>{editing ? "Editing body" : "Edit email body"}</summary>
-        <div
-          ref={bodyRef}
-          className="body-edit"
-          contentEditable
-          suppressContentEditableWarning
-          spellCheck
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
-          onInput={scheduleSave}
-          onPaste={(ev) => {
-            ev.preventDefault();
-            const text = (ev.clipboardData || window.clipboardData).getData("text/plain");
-            document.execCommand("insertText", false, text);
-          }}
-        />
-        <p className="edit-hint">Paste is plain text. Edits autosave; Approve creates the Gmail draft.</p>
-      </details>
+          {!editing && (
+            <div
+              className="body-preview"
+              dangerouslySetInnerHTML={{ __html: previewHtml || "<p><em>Empty body</em></p>" }}
+            />
+          )}
+
+          <details
+            ref={detailsRef}
+            className="preview"
+            onToggle={(ev) => {
+              if (ev.currentTarget.open !== editing) onToggleEdit(ev.currentTarget.open);
+            }}
+          >
+            <summary>{editing ? "Editing body" : "Edit email body"}</summary>
+            <div
+              ref={bodyRef}
+              className="body-edit"
+              contentEditable
+              suppressContentEditableWarning
+              spellCheck
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+              onInput={scheduleSave}
+              onPaste={(ev) => {
+                ev.preventDefault();
+                const text = (ev.clipboardData || window.clipboardData).getData("text/plain");
+                document.execCommand("insertText", false, text);
+              }}
+            />
+            <p className="edit-hint">Paste is plain text. Edits autosave; Approve creates the Gmail draft.</p>
+          </details>
+        </>
+      )}
 
       <div className="q-actions">
         <button
@@ -464,7 +475,7 @@ export default function Approvals({
       </div>
       {sorted.length > 0 && (
         <p className="section-lede">
-          Read, tweak if needed, then Approve. That creates a Gmail draft only. Nothing sends.
+          Select a draft, review, Approve. Creates a Gmail draft only. Nothing sends.
         </p>
       )}
 

@@ -53,12 +53,14 @@ export default function Chrome({
           <div className="brand">
             <span className={`dot${running ? " live" : ""}`} aria-hidden="true" />
             <h1>EmailCRM</h1>
-            <span
-              className={`stagechip${running ? " live" : ""}`}
-              title={running ? (status.detail || "") : "Ready"}
-            >
-              {running ? prettyStage(status.stage) : "Ready"}
-            </span>
+            {running ? (
+              <span
+                className="stagechip live"
+                title={status.detail || ""}
+              >
+                {prettyStage(status.stage)}
+              </span>
+            ) : null}
           </div>
           <div className="actions">
             {!running && (

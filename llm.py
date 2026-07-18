@@ -65,7 +65,7 @@ def call(prompt, use_exa=False, max_turns=8):
                 f"Claude session limit already latched (resets {reset}); "
                 "inbox sync still works, drafts wait until reset")
         if status.over_budget():
-            hard = int(getattr(config, "TOKEN_HARD_PCT", 0.60) * 100)
+            hard = int(getattr(config, "TOKEN_HARD_PCT", 0.50) * 100)
             raise LLMError(
                 f"autopilot token cap ({hard}% of budget) reached, LLM stages stopped")
         raise LLMError("LLM marked down for this run")

@@ -67,6 +67,10 @@ def run(contacts, report, cap, log, dry_run=False):
             r["skipped"].append(
                 f"{c['name']}: Claude unavailable, reply draft deferred")
             continue
+        if not status.meter_allows(config.REPLY_METER_MAX_PCT):
+            r["skipped"].append(
+                f"meter {status.budget_pct():.0f}% — remaining replies deferred")
+            break
         expected_subject = f"Re: {subject}"
         prompt = (template
                   .replace("<<TODAY>>", today.isoformat())

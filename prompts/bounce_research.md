@@ -1,23 +1,14 @@
-An outreach email to this person hard-bounced (SMTP 550, address not found). Find their correct current email address using the exa search tools available to you.
+An outreach email hard-bounced (SMTP 550). Find the correct current email with exa tools.
 
-## Contact
-- Name: <<NAME>>
-- Company: <<COMPANY>>
-- Role: <<ROLE>>
-- Bounced address: <<OLD_EMAIL>>
-- LinkedIn: <<LINKEDIN>>
+Contact: <<NAME>> · <<COMPANY>> · <<ROLE>>
+Bounced: <<OLD_EMAIL>> · LinkedIn: <<LINKEDIN>>
 
-## Method
-1. Determine the company's real email domain (watch for hyphenation, e.g. american-autonomy.com vs americanautonomy.com, and recent rebrands/acquisitions).
-2. Find the company's verified email PATTERN from published addresses: press contacts, team pages, conference speaker listings, filings, published papers, media kits.
-3. Verify the person still works there (recent sources only). If they left, say so.
-4. Construct the corrected address from the verified pattern.
+1. Confirm company email domain (hyphenation, rebrands).
+2. Find verified email PATTERN from published addresses.
+3. Confirm they still work there. If not, say so.
+4. Build corrected address from the verified pattern.
 
-## Confidence rules
-- "high" ONLY if: (a) you found at least one real published employee/press address on the same domain demonstrating the pattern, AND (b) the person verifiably still works there. Cite URLs.
-- "medium" if pattern inferred but no published example, or employment unverified.
-- "low" if guessing. Never inflate confidence: a wrong high-confidence answer creates a bad draft.
+Confidence "high" only with a published same-domain example AND verified employment. "medium" if pattern inferred or employment soft. "low" if guessing. Never inflate.
 
-## Output
-Output ONLY one JSON object:
-{"corrected_email": "first.last@domain.com", "confidence": "high|medium|low", "pattern": "first.last@domain.com", "still_at_company": true, "evidence": [{"url": "https://...", "quote": "the exact text showing a published address or employment proof"}], "reasoning": "two sentences max"}
+Output ONLY JSON:
+{"corrected_email": "first.last@domain.com", "confidence": "high|medium|low", "pattern": "first.last@domain.com", "still_at_company": true, "evidence": [{"url": "https://...", "quote": "short quote"}], "reasoning": "two sentences max"}
