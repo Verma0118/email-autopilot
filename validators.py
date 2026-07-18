@@ -74,15 +74,32 @@ def lint_followup(subject, body_html, expected_subject, max_words=100):
     return errors
 
 
-OUTREACH_WORD_CAPS = {"startup_discovery": 170, "cold_outreach": 340,
-                      "networking_warm": 390, "nobe_pd_outreach": 220}
+OUTREACH_WORD_CAPS = {"startup_discovery": 180, "cold_outreach": 340,
+                      "networking_warm": 390, "nobe_pd_outreach": 230}
+
+# "Good Morning Andrew, Hope your week is going well!" (human warm open)
+WARM_OUTREACH_OPENER = re.compile(
+    r"^good\s+(morning|afternoon|evening)\s+[a-z][\w'.-]*,?\s+"
+    r"hope\s+(your|the)\s+(day|week)\s+(is\s+going|has\s+been)\s+well!?",
+    re.IGNORECASE,
+)
 
 
 def lint_outreach(subject, body_html, expected_subject, email_type):
     """First-touch outreach lint. Reuses the follow-up checks with per-type caps."""
     errors = lint_followup(subject, body_html, expected_subject,
                            max_words=OUTREACH_WORD_CAPS.get(email_type, 340))
-    text = _strip_html(body_html).lower()
+    plain = _strip_html(body_html)
+    text = plain.lower()
+    if not WARM_OUTREACH_OPENER.search(plain):
+        errors.append(
+            'missing warm opener: start with "Good Morning/Afternoon [Name], '
+            'Hope your week/day is going well!"'
+        )
+    if re.match(r"^(hi|hello|hey)\s+", text):
+        errors.append('do not open with bare "Hi/Hello"; use Good Morning/Afternoon')
+    if re.match(r"^my name is\b", text):
+        errors.append('do not jump into "My name is…"; put the warm greeting first')
     if email_type == "startup_discovery":
         if "not pitching anything" not in text:
             errors.append('missing mandatory "Not pitching anything..." sentence')
