@@ -9,12 +9,18 @@ Usage:
   run.py --setup         one-time Gmail OAuth flow
 
 Drafts only. This system has no gmail.send scope and cannot send email.
+
+Pipeline (full run):
+  1) Inbox sync (fast, no LLM)
+  2) Parallel: reply+bounce | scout→organize | rundown refresh
+  3) Digest + dashboard
 """
 import argparse
 import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import traceback
 from datetime import date, datetime
@@ -107,10 +113,8 @@ def main():
             crm.save(contacts, args.dry_run)
             log({"action": "schema_migrated"})
 
-        import threading
-
         from stages import (bounce_retry, digest, followups, inbox_agent,
-                            organizer, prospecting, reply_agent)
+                            inbox_sync, organizer, prospecting, reply_agent)
 
         alias = {"sync": "inbox", "nudge": "reply", "prospect": "scout"}
         stage = alias.get(args.stage, args.stage)
@@ -134,44 +138,64 @@ def main():
             except Exception:
                 report["fatal"].append(f"{name} crashed: {traceback.format_exc(limit=3)}")
 
-        def thread_a():
-            """Inbox Agent -> Reply Agent -> bounce retry. Owns all CRM writes."""
+        # —— Phase 1: inbox sync only (no LLM) ——
+        if want("inbox"):
+            status.set_field("rundown", "Updating…")
+            guarded("inbox sync", lambda: inbox_sync.run(
+                contacts, report, dry_run=args.dry_run))
+            # Immediate deterministic rundown so Overview never stays stale
+            guarded("inbox rundown", lambda: inbox_agent.write_rundown(
+                contacts, report, log, dry_run=args.dry_run))
+
+        # —— Phase 2: parallel work ——
+        # reply path owns CRM-ish reply drafts; scout→organize produces outreach
+        # drafts as soon as briefs exist (no waiting for reply to finish).
+        def thread_replies():
             try:
-                if want("inbox"):
-                    guarded("inbox agent", lambda: inbox_agent.run(
-                        contacts, report, log, dry_run=args.dry_run))
                 if want("reply"):
                     guarded("reply agent", lambda: reply_agent.run(
-                        contacts, report, args.cap or config.NUDGE_DAILY_CAP, log, dry_run=args.dry_run))
+                        contacts, report, args.cap or config.NUDGE_DAILY_CAP, log,
+                        dry_run=args.dry_run))
                 if want("bounce"):
                     guarded("bounce retry", lambda: bounce_retry.run(
-                        contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log, dry_run=args.dry_run))
+                        contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log,
+                        dry_run=args.dry_run))
                 if stage == "followup" or (stage is None and config.COLD_FOLLOWUPS_ENABLED):
                     guarded("cold follow-ups", lambda: followups.run(
-                        contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log, dry_run=args.dry_run))
+                        contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log,
+                        dry_run=args.dry_run))
             except status.Stopped:
                 pass
 
-        def thread_b():
-            """Scout Agent. Reads CRM for dedupe only; writes its own ledger/briefs."""
+        def thread_scout_organize():
             try:
                 if want("scout"):
                     guarded("scout agent", lambda: prospecting.run(
                         contacts, report, args.cap, log, dry_run=args.dry_run))
+                # Organize right after scout so drafts appear while replies continue
+                if want("organize"):
+                    guarded("organizer", lambda: organizer.run(
+                        contacts, report, log, dry_run=args.dry_run))
             except status.Stopped:
                 pass
 
-        ta = threading.Thread(target=thread_a, name="inbox+reply")
-        tb = threading.Thread(target=thread_b, name="scout")
-        ta.start(); tb.start()
-        ta.join(); tb.join()
-
-        try:
-            if want("organize"):
+        workers = []
+        if want("reply") or want("bounce") or stage == "followup" or (
+                stage is None and config.COLD_FOLLOWUPS_ENABLED):
+            workers.append(threading.Thread(target=thread_replies, name="replies"))
+        if want("scout") or want("organize"):
+            # organize-only stage still works (scout skipped)
+            if stage == "organize":
                 guarded("organizer", lambda: organizer.run(
                     contacts, report, log, dry_run=args.dry_run))
-        except status.Stopped:
-            pass
+            else:
+                workers.append(threading.Thread(
+                    target=thread_scout_organize, name="scout+organize"))
+
+        for t in workers:
+            t.start()
+        for t in workers:
+            t.join()
 
         status.update(stage="digest", detail="writing digest + dashboard")
         path, summary = digest.run(contacts, report, llm.calls_made(), dry_run=args.dry_run)

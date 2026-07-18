@@ -1,5 +1,6 @@
 """Organizer Agent: turn passing scout briefs into send-ready outreach emails
-in the approval queue, grouped by track. Runs after Inbox + Scout finish."""
+in the approval queue, grouped by track. Runs right after Scout (in parallel
+with the reply path on a full run)."""
 import json
 import re
 

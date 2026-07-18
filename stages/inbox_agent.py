@@ -1,52 +1,80 @@
-"""Inbox Agent: sync (deterministic) + short LLM rundown of inbox state."""
-import json
+"""Inbox Agent: sync (deterministic) + short rundown of inbox state.
+
+Rundown is built from this run's sync signals — no LLM — so the Overview
+card always refreshes and we don't burn tokens on a summary.
+"""
 from datetime import date
 
-import config
-import crm
-import gmail
-import llm
 import status
 from stages import inbox_sync
 
 
-def run(contacts, report, log, dry_run=False):
-    status.update(stage="inbox agent", detail="syncing inbox")
-    inbox_sync.run(contacts, report, dry_run=dry_run)
-    sync = report.get("inbox_sync", {})
+def _build_rundown(contacts, sync):
+    """Plain-language summary from deterministic sync output."""
+    parts = []
+    replies = sync.get("replies") or []
+    if replies:
+        shown = "; ".join(replies[:5])
+        extra = f" (+{len(replies) - 5} more)" if len(replies) > 5 else ""
+        parts.append(f"New replies: {shown}{extra}.")
+    else:
+        parts.append("No new replies this run.")
 
-    status.update(detail="writing inbox rundown")
-    open_convos = [f"{c['name']} ({c['company']}, {c['status']})"
-                   for c in contacts if c["status"] in ("replied", "converted")]
-    try:
-        recent = []
-        for m in gmail.search_messages("in:inbox -category:promotions newer_than:3d", max_results=10):
-            meta = gmail.message_meta(m["id"])
-            recent.append(f"{meta['from']}: {meta['subject']}")
-    except Exception:
-        recent = ["(inbox fetch failed)"]
+    ooo = sync.get("ooo") or []
+    if ooo:
+        parts.append("Out of office: " + "; ".join(ooo[:4]) + ".")
 
-    prompt = (config.PROMPT_DIR / "inbox_rundown.md").read_text()
-    for token, value in {
-        "<<TODAY>>": date.today().isoformat(),
-        "<<REPLIES>>": "; ".join(sync.get("replies", [])) or "none",
-        "<<OOO>>": "; ".join(sync.get("ooo", [])) or "none",
-        "<<BOUNCES>>": "; ".join(sync.get("bounces", [])) or "none",
-        "<<SENT>>": "; ".join(sync.get("sent_detected", [])) or "none",
-        "<<OPEN_CONVOS>>": "; ".join(open_convos) or "none",
-        "<<RECENT>>": "\n".join(recent) or "none",
-    }.items():
-        prompt = prompt.replace(token, value)
+    bounces = sync.get("bounces") or []
+    if bounces:
+        parts.append("Bounces: " + "; ".join(bounces[:4]) + ".")
 
+    sent = sync.get("sent_detected") or []
+    if sent:
+        parts.append("You sent: " + "; ".join(sent[:4]) + ".")
+
+    waiting = [c for c in contacts if c.get("status") in ("replied", "converted")]
+    if waiting:
+        names = ", ".join(
+            f"{c['name']} ({c.get('company') or '?'})" for c in waiting[:6]
+        )
+        extra = f" +{len(waiting) - 6} more" if len(waiting) > 6 else ""
+        parts.append(f"Open threads needing a look: {names}{extra}.")
+
+    return " ".join(parts)
+
+
+def _action_items(contacts, sync):
+    items = []
+    for line in (sync.get("replies") or [])[:6]:
+        items.append(f"Handle reply: {line}")
+    for c in contacts:
+        if c.get("status") in ("replied", "converted") and c.get("name"):
+            label = f"Reply to {c['name']}"
+            if c.get("company"):
+                label += f" ({c['company']})"
+            if label not in items and len(items) < 8:
+                items.append(label)
+    for line in (sync.get("bounces") or [])[:3]:
+        items.append(f"Fix bounce: {line}")
+    return items[:10]
+
+
+def write_rundown(contacts, report, log, dry_run=False):
+    """Refresh Overview rundown from the latest sync (call after inbox_sync)."""
+    sync = report.get("inbox_sync") or {}
+    status.update(stage="inbox agent", detail="updating inbox rundown")
     r = report.setdefault("inbox_agent", {})
-    try:
-        out = llm.call(prompt, use_exa=False)
-        r["rundown"] = out.get("rundown", "")
-        r["action_items"] = out.get("action_items", [])
-    except llm.LLMError as e:
-        r["rundown"] = "(rundown unavailable: LLM skipped this run)"
-        r["action_items"] = []
-        report["inbox_sync"].setdefault("errors", []).append(f"rundown: {e}")
-    status.set_field("rundown", r.get("rundown", ""))
-    log({"action": "inbox_rundown", "rundown": r.get("rundown", "")[:200]})
+    r["rundown"] = _build_rundown(contacts, sync)
+    r["action_items"] = _action_items(contacts, sync)
+    r["generated"] = date.today().isoformat()
+    status.set_field("rundown", r["rundown"])
+    log({"action": "inbox_rundown", "rundown": r["rundown"][:240], "llm": False})
     return r
+
+
+def run(contacts, report, log, dry_run=False):
+    """Full inbox stage: sync then rundown (used by --stage inbox)."""
+    status.update(stage="inbox agent", detail="syncing inbox")
+    status.set_field("rundown", "Updating…")
+    inbox_sync.run(contacts, report, dry_run=dry_run)
+    return write_rundown(contacts, report, log, dry_run=dry_run)
