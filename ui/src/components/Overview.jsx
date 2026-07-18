@@ -51,6 +51,127 @@ function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
   };
 }
 
+/** Fallback when status only has the old flat rundown string. */
+function parseLegacyRundown(text) {
+  const raw = String(text || "").trim();
+  if (!raw || raw === "Updating…" || raw === "No rundown yet.") return null;
+  const sections = [];
+  const patterns = [
+    [/No new replies this run\.?/i, "New replies", true],
+    [/New replies:\s*(.+?)(?:\.(?:\s+[A-Z])|$)/i, "New replies", false],
+    [/Out of office:\s*(.+?)(?:\.(?:\s+[A-Z])|$)/i, "Out of office", false],
+    [/Bounces:\s*(.+?)(?:\.(?:\s+[A-Z])|$)/i, "Bounces", false],
+    [/You sent:\s*(.+?)(?:\.(?:\s+[A-Z])|$)/i, "You sent", false],
+    [/Open threads needing a look:\s*(.+?)\.?$/i, "Open threads", false],
+  ];
+  for (const [re, title, emptyOnly] of patterns) {
+    const m = raw.match(re);
+    if (!m) continue;
+    if (emptyOnly) {
+      sections.push({ id: title, title, people: [], empty: "None this run." });
+      continue;
+    }
+    const chunk = m[1] || "";
+    const people = chunk.split(/;\s*|\s*,\s+(?=[A-Z])/).map(bit => {
+      const head = bit.split(":")[0].trim().replace(/\s*\+\d+\s*more$/i, "");
+      const pm = head.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+      if (pm) return { name: pm[1].trim(), company: pm[2].trim() };
+      if (!head || /^automatic reply/i.test(head)) return null;
+      return { name: head, company: "" };
+    }).filter(Boolean);
+    if (people.length) sections.push({ id: title, title, people, empty: "" });
+  }
+  return sections.length ? sections : null;
+}
+
+function NeedRow({ item, onDismiss, onShowApprovals, onShowReport }) {
+  const href = item.href || "";
+  const isMailto = href.startsWith("mailto:");
+  const isHash = href.startsWith("/#") || href.startsWith("#");
+  let linkLabel = "Open";
+  if (isMailto) linkLabel = "Email them";
+  else if (href.includes("mail.google")) linkLabel = "Open in Gmail";
+  else if (isHash || href.includes("approvals")) linkLabel = "Open Approvals";
+
+  const title = item.title || String(item.text || "").split(":")[0];
+  const detail = item.detail || (item.text && item.text.includes(":")
+    ? item.text.slice(item.text.indexOf(":") + 1).trim()
+    : "");
+  const action = item.action || "";
+
+  return (
+    <li className="need-row">
+      <div className="who">
+        <strong>{title}</strong>
+        {detail && <div className="meta">{detail}</div>}
+        {action && <div className="need-action">{action}</div>}
+      </div>
+      <div className="row-actions">
+        {href && (
+          isHash ? (
+            <button type="button" onClick={() => {
+              if (href.includes("approvals")) onShowApprovals();
+              else onShowReport();
+            }}>{linkLabel}</button>
+          ) : (
+            <a href={href} target="_blank" rel="noopener">{linkLabel}</a>
+          )
+        )}
+        <button type="button" onClick={() => onDismiss(item.id)}>Dismiss</button>
+      </div>
+    </li>
+  );
+}
+
+function RundownBlock({ sections, fallbackText }) {
+  if (!sections || !sections.length) {
+    return (
+      <div className="block compact rundown-block">
+        <p className="label">Inbox rundown</p>
+        <p className="sub">{fallbackText || "No rundown yet. Run Triage to refresh."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="block compact rundown-block">
+      <p className="label">Inbox rundown</p>
+      <div className="rundown-sections">
+        {sections.map(sec => {
+          const people = sec.people || [];
+          return (
+            <div key={sec.id || sec.title} className="rundown-sec">
+              <h4>
+                {sec.title}
+                {people.length > 0 && (
+                  <span className="badge" data-n={String(people.length)}>{people.length}</span>
+                )}
+              </h4>
+              {people.length === 0 ? (
+                <p className="rundown-empty">{sec.empty || "None."}</p>
+              ) : (
+                <ul>
+                  {people.map((p, i) => (
+                    <li key={i} className="person-row tight">
+                      <div className="who">
+                        <strong>{p.name}</strong>
+                        {p.company && <div className="meta">{p.company}</div>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!!sec.more && (
+                <p className="rundown-more">+{sec.more} more</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Overview({
   status, report, refreshReport, queueCount = 0,
   onRunStage, onShowApprovals, onShowReport,
@@ -70,9 +191,17 @@ export default function Overview({
 
   const stageLabel = status.running ? (status.stage || "running") : "idle";
   const lastRunText = status.running ? "running now…" : (status.detail || "idle");
-  const rundown = status.running && (!status.rundown || status.rundown === "Updating…")
+  const rundownText = status.running && (!status.rundown || status.rundown === "Updating…")
     ? "Updating…"
-    : (status.rundown || "No rundown yet.");
+    : (status.rundown || "");
+
+  const sectionsFromStatus = Array.isArray(status.rundown_sections) ? status.rundown_sections : null;
+  const sectionsFromReport = report?.inbox_agent?.rundown_sections;
+  const rundownSections = (sectionsFromStatus && sectionsFromStatus.length)
+    ? sectionsFromStatus
+    : (Array.isArray(sectionsFromReport) && sectionsFromReport.length
+      ? sectionsFromReport
+      : parseLegacyRundown(rundownText));
 
   const needsItems = Array.isArray(report.needs_you) ? report.needs_you : [];
   const normNeeds = needsItems.map(it => typeof it === "string" ? { id: it, text: it, href: null } : it);
@@ -116,6 +245,14 @@ export default function Overview({
     }
   }
 
+  function cleanLimit(s) {
+    return String(s)
+      .replace(/^[^:]+:\s*/, "")
+      .replace(/rate\/session limit, skipping all LLM stages this run:\s*/i, "")
+      .replace(/\s*·\s*/g, ". ")
+      .replace(/\s*—\s*/g, ". ");
+  }
+
   return (
     <>
       <div className="section-head">
@@ -124,7 +261,7 @@ export default function Overview({
       </div>
       {!status.running && (
         <p className="section-lede">
-          Status, meter, and what to run next. Keep Approvals clear before starting another Full run.
+          What needs attention, then a clean inbox snapshot. Keep Approvals clear before another Full run.
         </p>
       )}
 
@@ -199,33 +336,15 @@ export default function Overview({
               <span className="badge" data-n={String(needsN)}>{needsN}</span>
             </h3>
             <ul>
-              {normNeeds.slice(0, 10).map(it => {
-                const href = it.href || "";
-                const isMailto = href.startsWith("mailto:");
-                const isHash = href.startsWith("/#") || href.startsWith("#");
-                let linkLabel = "Open";
-                if (isMailto) linkLabel = "Email them";
-                else if (href.includes("mail.google")) linkLabel = "Open in Gmail";
-                else if (isHash || href.includes("approvals")) linkLabel = "Open Approvals";
-                return (
-                  <li key={it.id}>
-                    <div>{it.text}</div>
-                    <div className="row-actions">
-                      {href && (
-                        isHash ? (
-                          <button type="button" onClick={() => {
-                            if (href.includes("approvals")) onShowApprovals();
-                            else onShowReport();
-                          }}>{linkLabel}</button>
-                        ) : (
-                          <a href={href} target="_blank" rel="noopener">{linkLabel}</a>
-                        )
-                      )}
-                      <button type="button" onClick={() => handleDismiss(it.id)}>Dismiss</button>
-                    </div>
-                  </li>
-                );
-              })}
+              {normNeeds.slice(0, 10).map(it => (
+                <NeedRow
+                  key={it.id}
+                  item={it}
+                  onDismiss={handleDismiss}
+                  onShowApprovals={onShowApprovals}
+                  onShowReport={onShowReport}
+                />
+              ))}
             </ul>
           </div>
         )}
@@ -273,18 +392,18 @@ export default function Overview({
             {errLede && <p className="err-lede">{errLede}</p>}
             <ul>
               {limits.slice(0, 1).map((s, i) => {
-                const short = s.replace(/^[^:]+:\s*/, "").replace(/rate\/session limit, skipping all LLM stages this run:\s*/i, "");
-                return <li key={"lim" + i}>{short.slice(0, 140)}{short.length > 140 ? "…" : ""}</li>;
+                const short = cleanLimit(s);
+                return <li key={"lim" + i}>{short.slice(0, 160)}{short.length > 160 ? "…" : ""}</li>;
               })}
               {other.slice(0, 4).map((s, i) => <li key={"oth" + i}>{s}</li>)}
             </ul>
           </div>
         )}
 
-        <div className="block compact">
-          <p className="label">Inbox rundown</p>
-          <p className="rundown">{rundown}</p>
-        </div>
+        <RundownBlock
+          sections={rundownSections}
+          fallbackText={rundownText || "No rundown yet. Run Triage to refresh."}
+        />
 
         <p className="report-link-row">
           <a href="/dashboard" target="_blank" rel="noopener">Open full report ↗</a>
