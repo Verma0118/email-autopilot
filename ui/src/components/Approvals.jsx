@@ -291,16 +291,19 @@ function QueueItem({
           className="btn btn-good approve"
           onClick={(ev) => handleApprove(ev.currentTarget, { confirm: false })}
         >
-          Approve → Gmail draft
+          Approve
         </button>
-        <span className="skip-menu">
-          <button type="button" onClick={() => handleSkip(3)}>Skip 3d</button>
-          <button type="button" onClick={() => handleSkip(7)}>Skip 7d</button>
-          <button type="button" onClick={() => handleSkip("forever")}>Skip ∞</button>
-        </span>
-        <button type="button" className="btn btn-quiet skip" onClick={handleCopy}>
-          Copy body
+        <button type="button" className="btn btn-quiet skip" onClick={() => handleSkip(7)}>
+          Skip 7 days
         </button>
+        <details className="more-actions">
+          <summary>More</summary>
+          <div className="more-actions-menu">
+            <button type="button" onClick={() => handleSkip(3)}>Skip 3 days</button>
+            <button type="button" onClick={() => handleSkip("forever")}>Skip forever</button>
+            <button type="button" onClick={handleCopy}>Copy body</button>
+          </div>
+        </details>
       </div>
     </li>
   );
@@ -319,19 +322,8 @@ export default function Approvals({
   const sorted = sortQueue(queue);
   const filtered = filterQueue(sorted, filter, trackFilter, search);
 
-  const nReply = sorted.filter(i => i.kind === "reply").length;
-  const nBounce = sorted.filter(i => i.kind === "bounce").length;
-  const nFollowup = sorted.filter(i => i.kind === "followup").length;
   const nOut = sorted.filter(i => i.kind === "outreach").length;
   const hasOutreach = nOut > 0;
-  const splitLabel = sorted.length
-    ? [
-        (nReply ? nReply + " repl" + (nReply === 1 ? "y" : "ies") : ""),
-        (nBounce ? nBounce + " bounce" : ""),
-        (nFollowup ? nFollowup + " follow-up" : ""),
-        (nOut ? nOut + " outreach" : ""),
-      ].filter(Boolean).join(", ")
-    : "";
 
   function setFocus(i) {
     const idx = Math.max(0, Math.min(i, filtered.length - 1));
@@ -396,7 +388,7 @@ export default function Approvals({
       await onRunStage("triage");
     } else {
       const res = await postRun("triage");
-      if (res.ok) addToast("Triage run started");
+      if (res.ok) addToast("Check email started");
       else addToast(res.status === 409 ? "Already running" : "Could not start run");
     }
   }
@@ -452,31 +444,38 @@ export default function Approvals({
   }, [focusIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const searching = search || filter !== "all" || trackFilter;
+  const showFilters = sorted.length >= 4 || searching;
+  const showTrackChips = hasOutreach && nOut >= 3;
 
   return (
     <>
       <div className="section-head">
-        <h2>Approvals {splitLabel ? <span className="qsplit">{splitLabel}</span> : null}</h2>
+        <h2>
+          Inbox
+          {sorted.length > 0 && (
+            <span className="qsplit">{sorted.length} to review</span>
+          )}
+        </h2>
         {sorted.length > 0 && (
           <p className="hint">
-            <span className="kbd">j</span>/<span className="kbd">k</span> move, <span className="kbd">a</span> approve, <span className="kbd">?</span> help
+            <span className="kbd">j</span>/<span className="kbd">k</span> · <span className="kbd">a</span> approve · <span className="kbd">s</span> skip
           </p>
         )}
       </div>
       {sorted.length > 0 && (
         <p className="section-lede">
-          Review drafts before they land in Gmail. Approve creates a draft only; nothing sends.
+          Read, tweak if needed, then Approve. That creates a Gmail draft only. Nothing sends.
         </p>
       )}
 
-      {needsCount > 0 && (
+      {needsCount > 0 && sorted.length === 0 && (
         <p className="urgency-banner">
-          <span>{needsCount} item{needsCount === 1 ? "" : "s"} need you on Overview</span>
-          <button type="button" onClick={onShowOverview}>Overview →</button>
+          <span>{needsCount} item{needsCount === 1 ? "" : "s"} on Status need a look</span>
+          <button type="button" onClick={onShowOverview}>Open Status</button>
         </p>
       )}
 
-      {(sorted.length > 0 || searching) && (
+      {showFilters && (
       <div className="filters" id="qfilters">
         {FILTERS.map(f => (
           <button
@@ -488,7 +487,7 @@ export default function Approvals({
             {f.label}
           </button>
         ))}
-        {hasOutreach && (
+        {showTrackChips && (
           <span className="track-filters" aria-label="Track filters">
             {TRACK_CHIPS.map(t => (
               <button
@@ -506,7 +505,7 @@ export default function Approvals({
           className="qsearch"
           id="qsearch"
           type="search"
-          placeholder="Search name, company…"
+          placeholder="Search…"
           autoComplete="off"
           value={search}
           onChange={ev => setSearch(ev.target.value.trim().toLowerCase())}
@@ -519,19 +518,19 @@ export default function Approvals({
         {filtered.length === 0 ? (
           <li className="empty calm">
             {searching ? (
-              <><strong>No matches</strong>Try another filter or clear search.</>
+              <><strong>No matches</strong>Try clearing search.</>
             ) : (
               <>
-                <strong>All clear</strong>
+                <strong>Inbox clear</strong>
                 <span className="empty-body">
-                  Nothing waiting for approval. When you are ready, run Triage to sync inbox and draft replies.
+                  Nothing waiting. Check email to sync inbox and draft anything new.
                 </span>
                 <button
                   type="button"
                   className="btn btn-primary cta"
                   onClick={startTriage}
                 >
-                  Start Triage
+                  Check email
                 </button>
               </>
             )}

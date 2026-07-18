@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getQueue, getHistory, getStatus, getReport, getVersion, postRun, postStop } from "./api.js";
+import { getQueue, getHistory, getStatus, getReport, getVersion, postRun, postStop, postUpdate } from "./api.js";
 import Chrome from "./components/Chrome.jsx";
 import RunBanner from "./components/RunBanner.jsx";
 import Approvals from "./components/Approvals.jsx";
@@ -53,7 +53,7 @@ export default function App() {
   const [buildHead, setBuildHead] = useState("…");
   const [helpOpen, setHelpOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
-  const [runMode, setRunMode] = useState("");
+  const [runMode, setRunMode] = useState("triage");
 
   const wasRunning = useRef(false);
   const toastId = useRef(0);
@@ -124,23 +124,14 @@ export default function App() {
     try {
       const s = await getStatus();
       setStatus(s);
-      if (!wasRunning.current && s.running) {
-        showTab("activity");
-      }
+      // Stay on the current tab when a run starts — banner covers progress.
+      // When a run finishes, always land on Inbox (Approvals) if there is work.
       if (wasRunning.current && !s.running) {
         refreshReport();
         const summary = s.detail || "Run finished";
-        addToast(
-          <span>
-            {summary}.{" "}
-            <button className="linkish" onClick={() => showTab("overview")}>
-              Overview
-            </button>
-          </span>,
-          12000
-        );
+        addToast(summary, 10000);
         setQueue(prev => {
-          showTab(prev.length > 0 ? "approvals" : "overview");
+          showTab("approvals");
           return prev;
         });
         refreshQueue();
@@ -169,16 +160,8 @@ export default function App() {
 
       const hash = (location.hash || "").replace("#", "");
       if (!VALID_TABS.includes(hash) && hash !== "report") {
-        setQueue(q => {
-          setReport(r => {
-            const needsN = r.needs_n != null ? r.needs_n : (r.needs_you || []).length;
-            const briefsN = r.briefs_n || (r.briefs_waiting || []).length;
-            if (q.length) showTab("approvals");
-            else if (needsN + briefsN > 0) showTab("overview");
-            return r;
-          });
-          return q;
-        });
+        // Approvals (Inbox) is always home
+        showTab("approvals");
       }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -228,6 +211,17 @@ export default function App() {
   const costHint = buildCostHint(
     tokens.pct || 0, briefsN, !!tokens.limit_hit, tokens.hard_pct != null ? tokens.hard_pct : 60);
 
+  async function handleUpdate() {
+    addToast("Pulling latest from GitHub…");
+    const res = await postUpdate();
+    if (!res.ok || !res.data.ok) {
+      addToast(res.data.error || res.data.message || "Update failed. Check git on this Mac.");
+      return;
+    }
+    addToast(res.data.changed ? "Updated. Reloading panel…" : "Already latest. Reloading…");
+    setTimeout(() => location.reload(), 1400);
+  }
+
   return (
     <>
       <Chrome
@@ -240,8 +234,12 @@ export default function App() {
         setRunMode={setRunMode}
         addToast={addToast}
         pollStatus={pollStatus}
-        costHint={costHint}
       />
+      {costHint?.text && !status.running && (
+        <div className="soft-banner" role="status">
+          <span>{costHint.text}</span>
+        </div>
+      )}
       <RunBanner
         status={status}
         onStop={onStop}
@@ -278,16 +276,15 @@ export default function App() {
 
         <footer className="links">
           <nav className="footer-nav" aria-label="Related links">
-            <a href="https://verma0118.github.io/email-autopilot/" target="_blank" rel="noopener">Web dashboard</a>
             <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Gmail drafts</a>
             <a href="/dashboard" target="_blank" rel="noopener">Full report</a>
             <a href="/files/digest" target="_blank" rel="noopener">Digest</a>
-            <a href="/files/prospects" target="_blank" rel="noopener">Briefs</a>
-            <a href="/files/logs" target="_blank" rel="noopener">Logs</a>
+            <button type="button" className="linkish footer-update" onClick={handleUpdate}>
+              Update panel
+            </button>
           </nav>
           <p className="footer-meta">
-            Daily run at 7:04 AM. Panel build <span id="build">{buildHead}</span>.
-            Use <strong>Update</strong> to pull latest.
+            Daily check at 7:04 AM · build <span id="build">{buildHead}</span>
           </p>
         </footer>
       </main>

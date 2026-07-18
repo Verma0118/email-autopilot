@@ -6,24 +6,26 @@ export default function HelpOverlay({ open, onClose }) {
       onClick={(ev) => { if (ev.target === ev.currentTarget) onClose(); }}
     >
       <div className="help-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
-        <h2 id="help-title">Keyboard shortcuts</h2>
+        <h2 id="help-title">Shortcuts</h2>
         <dl>
-          <dt><span className="kbd">1</span> to <span className="kbd">3</span></dt>
-          <dd>Approvals / Overview / Activity</dd>
+          <dt><span className="kbd">1</span></dt>
+          <dd>Inbox</dd>
+          <dt><span className="kbd">2</span></dt>
+          <dd>Status</dd>
+          <dt><span className="kbd">3</span></dt>
+          <dd>Live</dd>
           <dt><span className="kbd">j</span> / <span className="kbd">k</span></dt>
-          <dd>Next / previous queue item</dd>
+          <dd>Next / previous draft</dd>
           <dt><span className="kbd">a</span></dt>
-          <dd>Approve focused (confirms)</dd>
+          <dd>Approve focused draft</dd>
           <dt><span className="kbd">s</span></dt>
           <dd>Skip focused for 7 days</dd>
           <dt><span className="kbd">o</span></dt>
-          <dd>Toggle edit body on focused card</dd>
-          <dt><span className="kbd">/</span></dt>
-          <dd>Focus search</dd>
+          <dd>Edit body</dd>
           <dt><span className="kbd">?</span></dt>
-          <dd>Toggle this help</dd>
+          <dd>This help</dd>
           <dt><span className="kbd">Esc</span></dt>
-          <dd>Close help</dd>
+          <dd>Close</dd>
         </dl>
         <button
           type="button"

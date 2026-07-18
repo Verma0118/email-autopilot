@@ -62,7 +62,7 @@ export default function Activity({ status }) {
       ) : (
         <div className="idle-card">
           <p className="idle-title">Quiet</p>
-          <p className="sub">Nothing is running. Choose a mode up top and hit Run.</p>
+          <p className="sub">Nothing is running. Hit Check email up top when you want a sync.</p>
         </div>
       )}
 

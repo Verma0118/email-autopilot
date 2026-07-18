@@ -4,16 +4,16 @@ function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
   if (running) return null;
   if (limitHit) {
     return {
-      title: "Session paused",
-      body: "Claude hit a session limit. Inbox sync still works. Wait for reset, then run Triage for drafts.",
+      title: "Claude is paused",
+      body: "You can still review Inbox and sync will work. Drafts wait until the session resets.",
       stage: "triage",
-      label: "Run Triage",
+      label: "Check email anyway",
     };
   }
   if (queueN > 0) {
     return {
-      title: "Clear Approvals first",
-      body: `${queueN} draft${queueN === 1 ? "" : "s"} waiting. Review before starting another run.`,
+      title: "Review your Inbox",
+      body: `${queueN} draft${queueN === 1 ? "" : "s"} waiting. Finish those before starting another run.`,
       stage: null,
       label: null,
       goApprovals: true,
@@ -21,33 +21,33 @@ function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
   }
   if (briefsN >= 2) {
     return {
-      title: "Organize waiting briefs",
-      body: `${briefsN} prospect briefs are ready. Cheaper than Scout.`,
+      title: "Briefs ready to draft",
+      body: `${briefsN} prospect briefs can become outreach. Use Organize from the Check email menu.`,
       stage: "organize",
-      label: "Run Organize",
+      label: "Organize briefs",
     };
   }
   if (needsN > 0 || tokPct < 45) {
     return {
-      title: "Clear inbox debt",
-      body: "Sync inbox, draft replies, and fix bounces.",
+      title: "Check email",
+      body: "Sync inbox, draft replies, and catch bounces.",
       stage: "triage",
-      label: "Run Triage",
+      label: "Check email",
     };
   }
   if (tokPct >= 45) {
     return {
-      title: "Meter is mid-range",
-      body: `Autopilot meter at ${Math.round(tokPct)}%. Prefer Triage or Organize over Scout.`,
+      title: "Meter is getting full",
+      body: `Autopilot meter at ${Math.round(tokPct)}%. Prefer Check email over Scout.`,
       stage: "triage",
-      label: "Run Triage",
+      label: "Check email",
     };
   }
   return {
-    title: "Ready for a Full run",
-    body: "Inbox looks quiet and the meter has room.",
-    stage: "",
-    label: "Run Full",
+    title: "Ready when you are",
+    body: "Inbox looks quiet. Check email anytime, or run Full from the menu.",
+    stage: "triage",
+    label: "Check email",
   };
 }
 
@@ -256,12 +256,12 @@ export default function Overview({
   return (
     <>
       <div className="section-head">
-        <h2>Overview</h2>
-        <p className="hint lastrun">Last run: <strong>{lastRunText}</strong></p>
+        <h2>Status</h2>
+        <p className="hint lastrun">Last: <strong>{lastRunText}</strong></p>
       </div>
       {!status.running && (
         <p className="section-lede">
-          What needs attention, then a clean inbox snapshot. Keep Approvals clear before another Full run.
+          Meter, needs-you items, and a clean inbox snapshot. Day-to-day work lives in Inbox.
         </p>
       )}
 
@@ -274,7 +274,7 @@ export default function Overview({
             <p className="sub">{status.detail || "Working…"}</p>
             {status.stream && <span className="stream">{status.stream}</span>}
             <p className="sub" style={{ marginTop: 10 }}>
-              Meter {tokDisplay}. Open Activity for the event feed.
+              Meter {tokDisplay}. Open Live for the event feed.
             </p>
           </div>
         </div>
@@ -304,21 +304,21 @@ export default function Overview({
       {tokens.limit_hit && (
         <div className="info-banner">
           <strong>Claude paused.</strong>
-          <span> Inbox sync, rundown, Approvals, and Update still work with no tokens. Reply / Organize / Scout / Bounce wait until reset.</span>
+          <span> Inbox review and sync still work. Draft stages wait until reset.</span>
         </div>
       )}
 
       {suggestion && (
         <div className="next-run">
           <div>
-            <p className="label">Suggested next</p>
+            <p className="label">Next step</p>
             <p className="next-title">{suggestion.title}</p>
             <p className="sub">{suggestion.body}</p>
           </div>
           <div className="next-actions">
             {suggestion.goApprovals && (
               <button type="button" className="btn btn-primary btn-sm" onClick={onShowApprovals}>
-                Open Approvals →
+                Open Inbox
               </button>
             )}
             {suggestion.label && suggestion.stage !== null && (
@@ -383,12 +383,12 @@ export default function Overview({
             </ul>
             <button
               type="button"
-              className="btn btn-primary btn-sm"
+              className="btn btn-quiet btn-sm"
               style={{ marginTop: 12 }}
               disabled={!!status.running}
               onClick={() => onRunStage("organize")}
             >
-              Run Organize →
+              Organize into drafts
             </button>
           </div>
         )}
