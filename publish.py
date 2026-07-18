@@ -27,19 +27,24 @@ SHELL_TEMPLATE = """<!doctype html>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@450;550;650;700&family=Fraunces:opsz,wght@9..144,550;9..144,650&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg0:#f3f6f4; --bg1:#e8efeb; --surface:#fbfcfb;
-  --ink:#14201a; --ink2:#5c6b63; --ink3:#8a968f;
-  --line:rgba(20,32,26,.1); --accent:#0f6e56; --accent-ink:#fff;
+  --bg0:#f6faf8; --bg1:#e8f2ed;
+  --surface:rgba(255,255,255,.78); --surface-solid:#ffffff;
+  --ink:#132019; --ink2:#5a6b64; --ink3:#879890;
+  --line:rgba(18,40,32,.1); --accent:#0d7a5f; --accent-ink:#fff;
   --bad:#b42318; --ease:cubic-bezier(0.23,1,0.32,1);
   --font:"Figtree", "Segoe UI", sans-serif;
   --display:"Fraunces", Georgia, serif;
+  --frost:blur(18px) saturate(1.4);
+  --shadow:0 1px 2px rgba(18,40,32,.04), 0 16px 40px rgba(18,40,32,.08);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg0:#0c1210; --bg1:#141c18; --surface:#151c19;
-    --ink:#e8eee9; --ink2:#9aaba2; --ink3:#6d7c74;
-    --line:rgba(232,238,233,.1); --accent:#3dba8f; --accent-ink:#062016;
-    --bad:#f07178;
+    --bg0:#0e1613; --bg1:#141c18;
+    --surface:rgba(22,32,28,.78); --surface-solid:#16201c;
+    --ink:#e8f0ec; --ink2:#9aada4; --ink3:#6d7c74;
+    --line:rgba(200,220,210,.12); --accent:#3ecf9a; --accent-ink:#062016;
+    --bad:#f97066;
+    --shadow:0 1px 2px rgba(0,0,0,.25), 0 16px 40px rgba(0,0,0,.35);
   }
 }
 * { box-sizing:border-box; margin:0; }
@@ -48,22 +53,24 @@ body {
   color:var(--ink); font:15px/1.5 var(--font); font-weight:450;
   -webkit-font-smoothing:antialiased;
   background:
-    radial-gradient(900px 420px at 20% 0%, rgba(15,110,86,.1), transparent 55%),
-    radial-gradient(700px 360px at 100% 100%, rgba(20,32,26,.05), transparent 50%),
+    radial-gradient(900px 420px at 20% 0%, rgba(13,122,95,.12), transparent 55%),
+    radial-gradient(700px 360px at 100% 100%, rgba(62,207,154,.08), transparent 50%),
     linear-gradient(165deg, var(--bg0), var(--bg1));
 }
 @media (prefers-color-scheme: dark) {
   body {
     background:
-      radial-gradient(900px 420px at 20% 0%, rgba(61,186,143,.14), transparent 55%),
-      radial-gradient(700px 360px at 100% 100%, rgba(61,186,143,.05), transparent 50%),
+      radial-gradient(900px 420px at 20% 0%, rgba(62,207,154,.14), transparent 55%),
+      radial-gradient(700px 360px at 100% 100%, rgba(13,122,95,.08), transparent 50%),
       linear-gradient(165deg, var(--bg0), var(--bg1));
   }
 }
 form {
-  background:var(--surface); border:1px solid var(--line); border-radius:18px;
+  background:var(--surface); border:1px solid var(--line); border-radius:20px;
   padding:28px 26px; width:100%; max-width:380px;
   display:flex; flex-direction:column; gap:12px;
+  backdrop-filter:var(--frost); -webkit-backdrop-filter:var(--frost);
+  box-shadow:var(--shadow);
   animation:rise 380ms var(--ease);
 }
 @keyframes rise {
@@ -84,8 +91,8 @@ h1 {
 p { color:var(--ink2); font-size:.88rem; }
 label { font-size:.78rem; font-weight:650; color:var(--ink3); }
 input {
-  font:inherit; color:var(--ink); background:color-mix(in srgb, var(--bg0) 80%, var(--surface));
-  border:1px solid var(--line); border-radius:10px; padding:11px 13px; width:100%;
+  font:inherit; color:var(--ink); background:var(--surface-solid);
+  border:1px solid var(--line); border-radius:11px; padding:11px 13px; width:100%;
 }
 input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 button {
