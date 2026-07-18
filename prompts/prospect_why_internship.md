@@ -1,1 +1,1 @@
-Tie them to a coffee-chat-worthy engineering role at a target company (structures/propulsion/test/CFD/mechanical) and mention UIUC alumni status if known.
+Tie them to a coffee-chat-worthy engineering role at Collins Aerospace or Raytheon/RTX (structures/mechanical/propulsion/test/CFD). Prefer UIUC alumni; say so when known.
