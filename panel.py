@@ -57,6 +57,213 @@ def _filter_report(raw):
     data["needs_n"] = len(visible)
     return json.dumps(data)
 
+def _brief_html(record, filename):
+    """Readable prospect brief page (not raw JSON)."""
+    import html as html_mod
+    e = html_mod.escape
+    cand = record.get("candidate") or {}
+    brief = record.get("brief") or {}
+    email = brief.get("email") or {}
+    hooks = brief.get("hooks") or []
+    if not isinstance(hooks, list):
+        hooks = []
+
+    name = cand.get("name") or filename
+    company = cand.get("company") or ""
+    role = cand.get("role") or ""
+    linkedin = cand.get("linkedin_url") or ""
+    track = record.get("track") or record.get("suggested_email_type") or ""
+    email_type = record.get("email_type") or track
+    date_s = record.get("date") or ""
+    organized = bool(record.get("organized"))
+    why = cand.get("why_icp") or ""
+    signal = brief.get("company_signal") or ""
+    role_src = brief.get("role_source") or ""
+    role_ok = brief.get("role_confirmed")
+    addr = email.get("address") or ""
+    basis = email.get("basis") or ""
+    evidence = email.get("evidence_urls") or []
+    if not isinstance(evidence, list):
+        evidence = []
+
+    def link(url, label=None):
+        if not url:
+            return ""
+        u = e(str(url))
+        lab = e(label or url)
+        return f'<a href="{u}" target="_blank" rel="noopener">{lab}</a>'
+
+    hook_rows = []
+    for h in hooks:
+        if isinstance(h, dict):
+            fact = e(str(h.get("fact") or ""))
+            url = h.get("url") or ""
+            src = f' <span class="src">{link(url, "source")}</span>' if url else ""
+            hook_rows.append(f"<li><p>{fact}</p>{src}</li>")
+        elif h:
+            hook_rows.append(f"<li><p>{e(str(h))}</p></li>")
+    hooks_html = ("<ul class='hooks'>" + "".join(hook_rows) + "</ul>") if hook_rows else "<p class='muted'>No hooks yet.</p>"
+
+    ev_html = ""
+    if evidence:
+        ev_html = "<ul class='ev'>" + "".join(f"<li>{link(u)}</li>" for u in evidence) + "</ul>"
+
+    status_pill = "Organized" if organized else "Awaiting organize"
+    status_cls = "ok" if organized else "wait"
+    role_pill = "Role confirmed" if role_ok else "Role unconfirmed"
+    role_cls = "ok" if role_ok else "warn"
+
+    title = e(f"{name}" + (f" · {company}" if company else ""))
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} — Brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+html {{ color-scheme: light; }}
+:root {{
+  --bg0:#f7faf8; --bg1:#e9f3ee; --paper:#fff;
+  --ink:#15241e; --ink2:#5c6f66; --ink3:#8a9a92;
+  --line:rgba(21,36,30,.09); --accent:#0c6b54; --accent-soft:rgba(12,107,84,.10);
+  --good:#0e6f42; --good-soft:rgba(14,111,66,.10);
+  --warn:#8a5a00; --warn-soft:rgba(138,90,0,.10);
+  --font:"Plus Jakarta Sans", system-ui, sans-serif;
+  --display:"Fraunces", Georgia, serif;
+  --radius:14px; --shadow:0 1px 2px rgba(21,36,30,.04), 0 8px 24px rgba(21,36,30,.05);
+}}
+* {{ box-sizing:border-box; margin:0; }}
+body {{
+  min-height:100vh; color:var(--ink); font:15px/1.55 var(--font); font-weight:450;
+  letter-spacing:-.01em; -webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(900px 420px at 0% -5%, rgba(12,107,84,.11), transparent 55%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
+}}
+.top {{
+  position:sticky; top:0; z-index:5; backdrop-filter:blur(14px);
+  background:rgba(255,255,255,.82); border-bottom:1px solid var(--line);
+}}
+.top-inner {{
+  max-width:720px; margin:0 auto; padding:12px 24px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+}}
+.back {{
+  font-weight:600; color:var(--accent); text-decoration:none; font-size:.9rem;
+}}
+.back:hover {{ text-decoration:underline; text-underline-offset:3px; }}
+.top .file {{ color:var(--ink3); font-size:.78rem; margin-left:auto; max-width:40ch;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+main {{ max-width:720px; margin:0 auto; padding:28px 24px 72px; }}
+.hero {{ margin-bottom:22px; }}
+.pills {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }}
+.pill {{
+  font-size:.72rem; font-weight:700; padding:4px 10px; border-radius:999px;
+  background:var(--accent-soft); color:var(--accent);
+}}
+.pill.ok {{ background:var(--good-soft); color:var(--good); }}
+.pill.wait {{ background:var(--accent-soft); color:var(--accent); }}
+.pill.warn {{ background:var(--warn-soft); color:var(--warn); }}
+.pill.mute {{ background:rgba(21,36,30,.05); color:var(--ink2); }}
+h1 {{
+  font-family:var(--display); font-size:2rem; font-weight:550;
+  letter-spacing:-.03em; line-height:1.15; margin-bottom:6px;
+}}
+.role {{ color:var(--ink2); font-size:1.02rem; margin-bottom:4px; }}
+.company {{ color:var(--ink3); font-size:.92rem; }}
+.grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:20px 0; }}
+@media (max-width:640px) {{ .grid {{ grid-template-columns:1fr; }} .top-inner, main {{ padding-left:16px; padding-right:16px; }} }}
+.card {{
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--radius);
+  padding:18px 20px; box-shadow:var(--shadow);
+}}
+.card.wide {{ grid-column:1 / -1; }}
+.card h2 {{
+  font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--ink3); margin-bottom:10px;
+}}
+.card p, .card li {{ color:var(--ink); font-size:.95rem; line-height:1.6; }}
+.card .muted, .src {{ color:var(--ink2); font-size:.84rem; }}
+.card a {{ color:var(--accent); font-weight:600; text-decoration:none; }}
+.card a:hover {{ text-decoration:underline; text-underline-offset:3px; }}
+.kv {{ display:grid; gap:10px; }}
+.kv div {{ display:flex; flex-direction:column; gap:2px; }}
+.kv dt {{ font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink3); }}
+.kv dd {{ font-size:.95rem; font-weight:550; word-break:break-word; }}
+.hooks {{ list-style:none; display:flex; flex-direction:column; gap:12px; }}
+.hooks li {{ padding-bottom:12px; border-bottom:1px solid var(--line); }}
+.hooks li:last-child {{ border-bottom:0; padding-bottom:0; }}
+.ev {{ list-style:none; display:flex; flex-direction:column; gap:6px; margin-top:8px; }}
+.actions {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; }}
+.btn {{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-height:40px; padding:0 16px; border-radius:10px; font:inherit; font-weight:600;
+  text-decoration:none; border:0; cursor:pointer;
+}}
+.btn-primary {{ background:var(--accent); color:#fff; }}
+.btn-quiet {{ background:var(--paper); color:var(--ink2); border:1px solid var(--line); }}
+.raw {{ margin-top:28px; color:var(--ink3); font-size:.8rem; }}
+.raw a {{ color:var(--ink2); }}
+</style></head>
+<body>
+<header class="top"><div class="top-inner">
+  <a class="back" href="/#overview">← Back to panel</a>
+  <span class="file" title="{e(filename)}">{e(filename)}</span>
+</div></header>
+<main>
+  <div class="hero">
+    <div class="pills">
+      <span class="pill {status_cls}">{e(status_pill)}</span>
+      <span class="pill {role_cls}">{e(role_pill)}</span>
+      {f'<span class="pill mute">{e(str(track))}</span>' if track else ''}
+      {f'<span class="pill mute">{e(str(date_s))}</span>' if date_s else ''}
+    </div>
+    <h1>{e(str(name))}</h1>
+    {f'<p class="role">{e(str(role))}</p>' if role else ''}
+    {f'<p class="company">{e(str(company))}</p>' if company else ''}
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Contact</h2>
+      <dl class="kv">
+        <div><dt>Email</dt><dd>{(link('mailto:'+addr, addr) if addr else '<span class="muted">—</span>')}</dd></div>
+        <div><dt>Basis</dt><dd>{e(str(basis)) if basis else '—'}</dd></div>
+        <div><dt>Email type</dt><dd>{e(str(email_type)) if email_type else '—'}</dd></div>
+        <div><dt>LinkedIn</dt><dd>{link(linkedin, 'Profile') if linkedin else '—'}</dd></div>
+      </dl>
+      {ev_html}
+    </div>
+    <div class="card">
+      <h2>Role check</h2>
+      <p>{e(str(role_src)) if role_src else '<span class="muted">No role source noted.</span>'}</p>
+    </div>
+    <div class="card wide">
+      <h2>Why ICP</h2>
+      <p>{e(str(why)) if why else '<span class="muted">—</span>'}</p>
+    </div>
+    <div class="card wide">
+      <h2>Company signal</h2>
+      <p>{e(str(signal)) if signal else '<span class="muted">—</span>'}</p>
+    </div>
+    <div class="card wide">
+      <h2>Hooks</h2>
+      {hooks_html}
+    </div>
+  </div>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="/#overview">Back to Overview</a>
+    {f'<a class="btn btn-quiet" href="{e(linkedin)}" target="_blank" rel="noopener">LinkedIn</a>' if linkedin else ''}
+    {f'<a class="btn btn-quiet" href="mailto:{e(addr)}">Email</a>' if addr else ''}
+  </div>
+  <p class="raw"><a href="/brief/{e(filename)}?raw=1">View raw JSON</a></p>
+</main>
+</body></html>"""
+
+
+
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -528,6 +735,42 @@ footer.links {
 }
 .toast .dismiss { margin-left:auto; color:inherit; opacity:.65; background:none; border:0;
   min-height:auto; padding:2px 6px; cursor:pointer; font-weight:650; }
+
+/* —— overview navigation helpers —— */
+.jumpnav {
+  display:flex; flex-wrap:wrap; gap:8px; margin:0 0 16px; padding:0;
+  list-style:none;
+}
+.jumpnav a {
+  font-size:.8rem; font-weight:600; color:var(--ink2); text-decoration:none;
+  padding:6px 12px; border-radius:var(--radius-xs); background:var(--paper);
+  border:1px solid var(--line);
+}
+.jumpnav a:hover { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 28%, var(--line)); text-decoration:none; }
+
+.person-row {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:14px 16px !important;
+}
+.person-row .who { flex:1; min-width:160px; }
+.person-row .who strong { display:block; font-size:.98rem; font-weight:650; letter-spacing:-.015em; color:var(--ink); }
+.person-row .who .meta { color:var(--ink2); font-size:.84rem; margin-top:2px; }
+.person-row .tag {
+  font-size:.7rem; font-weight:700; color:var(--accent); background:var(--accent-soft);
+  padding:4px 9px; border-radius:999px; white-space:nowrap;
+}
+.person-row .btn { margin-left:auto; text-decoration:none; }
+.person-row .btn:hover { text-decoration:none; }
+
+.errors-box li {
+  background:var(--paper); border:1px solid color-mix(in srgb, var(--bad) 14%, var(--line));
+  border-radius:var(--radius-sm); padding:10px 12px; font-size:.84rem; line-height:1.45;
+  color:var(--ink); overflow-wrap:anywhere;
+}
+.chrome-label {
+  font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--ink3); margin-right:2px;
+}
 </style></head>
 <body>
 <div class="chrome">
@@ -539,6 +782,7 @@ footer.links {
         <span class="stagechip" id="stagechip">idle</span>
       </div>
       <div class="actions">
+        <span class="chrome-label">Mode</span>
         <div class="run-modes" id="run-modes" title="What to run" aria-label="Run mode">
           <button type="button" class="chip active" data-stage="">Full</button>
           <button type="button" class="chip" data-stage="triage">Triage</button>
@@ -589,9 +833,15 @@ footer.links {
 
   <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" hidden>
     <div class="section-head"><h2>Overview</h2></div>
-    <p class="section-lede">What needs attention first, then the latest run status.</p>
+    <p class="section-lede">Start here: people and errors that need a decision, then run status below.</p>
+    <ul class="jumpnav" id="jumpnav" hidden>
+      <li><a href="#zone-attention">Attention</a></li>
+      <li id="jump-briefs" hidden><a href="#briefsbox">Briefs</a></li>
+      <li id="jump-errors" hidden><a href="#errorsbox">Errors</a></li>
+      <li><a href="#zone-status">Status</a></li>
+    </ul>
     <div class="stack-lg">
-      <div class="stack">
+      <div class="stack" id="zone-attention">
         <p class="zone-label">Needs attention</p>
         <p class="lastrun" id="lastrun">Last run: <strong id="lastrun-text">—</strong></p>
         <div class="needs" id="needsbox" hidden>
@@ -617,7 +867,7 @@ footer.links {
           <ul id="errorslist"></ul>
         </div>
       </div>
-      <div class="stack">
+      <div class="stack" id="zone-status">
         <p class="zone-label">Status</p>
         <div class="grid">
           <div class="block">
@@ -728,6 +978,9 @@ function showPanel(name) {
   }
   updateUrgencyBanner();
   try { localStorage.setItem("emailcrm-tab", name); } catch (_) {}
+  if (location.hash !== "#" + name) {
+    try { history.replaceState(null, "", "#" + name); } catch (_) {}
+  }
 }
 
 document.querySelectorAll(".tab").forEach(t => {
@@ -738,6 +991,10 @@ el("needs-report").addEventListener("click", ev => {
   showPanel("report");
 });
 el("urgency-go").addEventListener("click", () => showPanel("overview"));
+window.addEventListener("hashchange", () => {
+  const h = (location.hash || "").replace("#", "");
+  if (["approvals", "overview", "activity", "report"].includes(h)) showPanel(h);
+});
 
 document.querySelectorAll("#qfilters .chip").forEach(c => {
   c.addEventListener("click", () => {
@@ -843,7 +1100,7 @@ function contextHtml(item) {
     if (m.hooks) parts.push("<strong>Hooks</strong><br>" + esc(m.hooks).replace(/\\n/g, "<br>"));
     if (m.email_basis) parts.push("<strong>Email basis</strong> · " + esc(m.email_basis));
     if (m.brief_file) {
-      parts.push('<a href="/brief/' + encodeURIComponent(m.brief_file) + '" target="_blank" rel="noopener">Full brief</a>');
+      parts.push('<a href="/brief/' + encodeURIComponent(m.brief_file) + '">Full brief</a>');
     }
     if (!parts.length) return "";
     return '<details class="context"><summary>Research context</summary><div class="ctx-body">' +
@@ -1020,17 +1277,28 @@ async function loadReport() {
     const briefs = r.briefs_waiting || [];
     el("briefsbadge").textContent = briefsN;
     el("briefsbadge").dataset.n = String(briefsN);
-    if (!briefsN) { bbox.hidden = true; el("briefslist").innerHTML = ""; }
-    else {
+    if (!briefsN) {
+      bbox.hidden = true; el("briefslist").innerHTML = "";
+      const jb0 = el("jump-briefs"); if (jb0) jb0.hidden = true;
+    } else {
       bbox.hidden = false;
       el("briefslist").innerHTML = briefs.slice(0, 12).map(b => {
-        const who = esc(b.name || b.file) + (b.company ? " · " + esc(b.company) : "");
-        const track = b.track ? '<span class="sub"> · ' + esc(b.track) + '</span>' : "";
+        const name = esc(b.name || b.file || "Prospect");
+        const company = b.company ? esc(b.company) : "";
+        const track = b.track ? '<span class="tag">' + esc(b.track) + '</span>' : "";
         const link = b.file
-          ? ' · <a href="/brief/' + encodeURIComponent(b.file) + '" target="_blank" rel="noopener">Open</a>'
+          ? '<a class="btn btn-quiet btn-sm" href="/brief/' + encodeURIComponent(b.file) + '">Open brief</a>'
           : "";
-        return "<li>" + who + track + link + "</li>";
+        return '<li class="person-row"><div class="who"><strong>' + name + '</strong>' +
+          (company ? '<div class="meta">' + company + '</div>' : '') + '</div>' +
+          track + link + '</li>';
       }).join("");
+    }
+    const jn = el("jumpnav");
+    if (jn) {
+      jn.hidden = false;
+      const jb = el("jump-briefs"); if (jb) jb.hidden = !briefsN;
+      const je = el("jump-errors"); if (je) je.hidden = !(r.errors || []).length;
     }
     const abox = el("actionsbox");
     const actions = r.action_items || [];
@@ -1335,12 +1603,17 @@ el("stop").addEventListener("click", async () => {
 });
 
 (async () => {
+  const hash = (location.hash || "").replace("#", "");
   let tab = "approvals";
   try { tab = localStorage.getItem("emailcrm-tab") || "approvals"; } catch (_) {}
+  if (["approvals", "overview", "activity", "report"].includes(hash)) tab = hash;
   await loadQueue();
   await loadReport();
   await loadHistory();
-  if (queueAll.length) tab = "approvals";
+  if (!["approvals", "overview", "activity", "report"].includes(hash)) {
+    if (queueAll.length) tab = "approvals";
+    else if (needsCount > 0 || Number(el("overviewbadge")?.dataset.n || 0) > 0) tab = "overview";
+  }
   showPanel(tab);
   poll();
   setInterval(poll, 2000);
@@ -1368,14 +1641,17 @@ class Handler(BaseHTTPRequestHandler):
     def _dir_page(self, title, folder, pattern="*"):
         import html as html_mod
         rows = []
+        is_briefs = folder == config.QUEUE_PROSPECTS
         if folder.exists():
             files = sorted(folder.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
             for p in files[:80]:
                 if p.is_file():
                     rel = p.name
-                    rows.append(
-                        f'<li><a href="/files/raw?p={html_mod.escape(str(p), quote=True)}">'
-                        f'{html_mod.escape(rel)}</a></li>')
+                    if is_briefs and p.suffix == ".json":
+                        href = f"/brief/{html_mod.escape(rel, quote=True)}"
+                    else:
+                        href = f"/files/raw?p={html_mod.escape(str(p), quote=True)}"
+                    rows.append(f'<li><a href="{href}">{html_mod.escape(rel)}</a></li>')
         body = ("<ul>" + "".join(rows) + "</ul>") if rows else "<p>No files yet.</p>"
         return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1383,7 +1659,7 @@ class Handler(BaseHTTPRequestHandler):
 <style>body{{font:15px/1.55 "Plus Jakarta Sans",system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 20px;color:#15241e;background:#f7faf8}}
 a{{color:#0c6b54}} ul{{padding-left:1.2rem}} li{{margin:6px 0}}</style></head>
 <body><h1>{html_mod.escape(title)}</h1>{body}
-<p><a href="/">← Panel</a></p></body></html>"""
+<p><a href="/#overview">← Panel</a></p></body></html>"""
 
     def _safe_local_file(self, path_str):
         """Only serve files under EmailCRM digest / briefs / logs dirs."""
@@ -1432,25 +1708,34 @@ background:#f7faf8;text-align:center}strong{display:block;font-size:1.2rem;margi
             } for i in queue_store.resolved_today()]
             self._send(200, json.dumps(rows))
         elif path.startswith("/brief/"):
-            from urllib.parse import unquote
-            name = unquote(path.split("/brief/", 1)[1])
+            from urllib.parse import unquote, urlparse, parse_qs
+            parsed = urlparse(self.path)
+            name = unquote(parsed.path.split("/brief/", 1)[1])
+            want_raw = "raw" in parse_qs(parsed.query)
             if ".." in name or "/" in name or not name:
                 self._send(404, "not found", "text/plain; charset=utf-8")
                 return
             brief = config.QUEUE_PROSPECTS / name
-            if brief.is_file():
-                text = brief.read_text(errors="replace")
-                if brief.suffix == ".json":
-                    try:
-                        text = json.dumps(json.loads(text), indent=2)
-                    except Exception:
-                        pass
-                    ctype = "application/json; charset=utf-8"
-                else:
-                    ctype = "text/plain; charset=utf-8"
-                self._send(200, text, ctype)
-            else:
+            if not brief.is_file():
                 self._send(404, "not found", "text/plain; charset=utf-8")
+                return
+            raw = brief.read_text(errors="replace")
+            if brief.suffix == ".json" and not want_raw:
+                try:
+                    data = json.loads(raw)
+                except Exception:
+                    data = None
+                if isinstance(data, dict):
+                    self._send(200, _brief_html(data, name), "text/html; charset=utf-8")
+                    return
+            if brief.suffix == ".json":
+                try:
+                    raw = json.dumps(json.loads(raw), indent=2)
+                except Exception:
+                    pass
+                self._send(200, raw, "application/json; charset=utf-8")
+            else:
+                self._send(200, raw, "text/plain; charset=utf-8")
         elif path == "/status":
             if status.STATUS_FILE.exists():
                 self._send(200, status.STATUS_FILE.read_text())
