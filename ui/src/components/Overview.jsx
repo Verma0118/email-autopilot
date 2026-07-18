@@ -122,6 +122,9 @@ export default function Overview({
         <h2>Overview</h2>
         <p className="hint lastrun">Last run: <strong>{lastRunText}</strong></p>
       </div>
+      <p className="section-lede">
+        Status, meter, and what to run next. Keep Approvals clear before starting another Full run.
+      </p>
 
       <div className="status-strip">
         <div className="block compact">

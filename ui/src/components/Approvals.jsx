@@ -461,6 +461,9 @@ export default function Approvals({
           <span className="kbd">j</span>/<span className="kbd">k</span> move, <span className="kbd">a</span> approve, <span className="kbd">?</span> help
         </p>
       </div>
+      <p className="section-lede">
+        Review drafts before they land in Gmail. Approve creates a draft only; nothing sends.
+      </p>
 
       {needsCount > 0 && (
         <p className="urgency-banner">
