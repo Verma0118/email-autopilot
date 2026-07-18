@@ -41,7 +41,7 @@ export default function Activity({ status }) {
 
       <ul className="feed-list" aria-live="polite">
         {events.length === 0 ? (
-          <li>no events yet — hit Run now</li>
+          <li>No events yet. Hit Run now.</li>
         ) : (
           events.map((e, i) => (
             <li key={i}>

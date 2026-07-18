@@ -19,23 +19,23 @@ function getInitialTab() {
 
 function buildCostHint(tokPct, briefsN, limitHit, hardPct = 60) {
   if (limitHit) {
-    return { short: "Paused — wait for reset", text: "Claude session limit hit. Wait, then run Triage." };
+    return { short: "Paused, wait for reset", text: "Claude session limit hit. Wait, then run Triage." };
   }
   if (tokPct >= hardPct) {
     return {
-      short: `Cap ${Math.round(hardPct)}% — LLM stopped`,
+      short: `Cap ${Math.round(hardPct)}%, LLM stopped`,
       text: `Autopilot hit its ${Math.round(hardPct)}% token cap. Non-LLM work only until the window resets.`,
     };
   }
   if (tokPct >= 45) {
     return {
-      short: `Meter ${Math.round(tokPct)}% — skip Scout`,
+      short: `Meter ${Math.round(tokPct)}%, skip Scout`,
       text: `Autopilot meter at ${Math.round(tokPct)}% (cap ${Math.round(hardPct)}%). Run Organize or Triage instead of Scout.`,
     };
   }
   if (briefsN >= 2) {
     return {
-      short: `${briefsN} briefs — Organize`,
+      short: `${briefsN} briefs, Organize`,
       text: `${briefsN} briefs waiting. Run Organize before Scout.`,
     };
   }
@@ -44,7 +44,7 @@ function buildCostHint(tokPct, briefsN, limitHit, hardPct = 60) {
 
 export default function App() {
   const [tab, setTab] = useState(getInitialTab);
-  const [status, setStatus] = useState({ running: false, stage: "idle", detail: "—", tokens: {}, events: [] });
+  const [status, setStatus] = useState({ running: false, stage: "idle", detail: "idle", tokens: {}, events: [] });
   const [queue, setQueue] = useState([]);
   const [resolvedHistory, setResolvedHistory] = useState([]);
   const [report, setReport] = useState({ needs_you: [], needs_n: 0, briefs_waiting: [], errors: [] });
@@ -130,7 +130,7 @@ export default function App() {
         const summary = s.detail || "Run finished";
         addToast(
           <span>
-            {summary} ·{" "}
+            {summary}.{" "}
             <button className="linkish" onClick={() => showTab("overview")}>
               Overview
             </button>
@@ -253,13 +253,18 @@ export default function App() {
         </div>
 
         <footer className="links">
-          <a href="https://verma0118.github.io/email-autopilot/" target="_blank" rel="noopener">Web dashboard</a> (encrypted, away-from-Mac) ·{" "}
-          <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Gmail drafts</a> ·{" "}
-          <a href="/dashboard" target="_blank" rel="noopener">Full report</a> ·{" "}
-          <a href="/files/digest" target="_blank" rel="noopener">Digest</a> ·{" "}
-          <a href="/files/prospects" target="_blank" rel="noopener">Briefs</a> ·{" "}
-          <a href="/files/logs" target="_blank" rel="noopener">Logs</a><br />
-          Scheduled run: daily 7:04 AM · panel <span id="build">{buildHead}</span> · click <strong>Update</strong> for latest (auto-reloads after pull)
+          <nav className="footer-nav" aria-label="Related links">
+            <a href="https://verma0118.github.io/email-autopilot/" target="_blank" rel="noopener">Web dashboard</a>
+            <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Gmail drafts</a>
+            <a href="/dashboard" target="_blank" rel="noopener">Full report</a>
+            <a href="/files/digest" target="_blank" rel="noopener">Digest</a>
+            <a href="/files/prospects" target="_blank" rel="noopener">Briefs</a>
+            <a href="/files/logs" target="_blank" rel="noopener">Logs</a>
+          </nav>
+          <p className="footer-meta">
+            Daily run at 7:04 AM. Panel build <span id="build">{buildHead}</span>.
+            Use <strong>Update</strong> to pull latest.
+          </p>
         </footer>
       </main>
 

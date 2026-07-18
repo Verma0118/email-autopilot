@@ -77,18 +77,18 @@ function ContextBlock({ item }) {
       <details className="context" open>
         <summary>Bounce fix</summary>
         <div className="ctx-body">
-          <strong>Email</strong> · {oldEmail || "?"} → {newEmail || "?"}
+          <strong>Email</strong> {oldEmail || "?"} → {newEmail || "?"}
         </div>
       </details>
     );
   }
   if (item.kind === "outreach") {
     const parts = [];
-    if (m.role) parts.push(<span key="role"><strong>Role</strong> · {m.role}</span>);
+    if (m.role) parts.push(<span key="role"><strong>Role</strong> {m.role}</span>);
     if (m.linkedin) {
       parts.push(
         <span key="li">
-          <strong>LinkedIn</strong> ·{" "}
+          <strong>LinkedIn</strong>{" "}
           <a href={m.linkedin} target="_blank" rel="noopener">Open LinkedIn</a>
         </span>
       );
@@ -96,7 +96,7 @@ function ContextBlock({ item }) {
     if (m.attachments && m.attachments.length) {
       parts.push(
         <span key="att">
-          <strong>Attachments</strong> · {m.attachments.join(", ")}
+          <strong>Attachments</strong> {m.attachments.join(", ")}
           <span className="att-note"> (if file is in assets/)</span>
         </span>
       );
@@ -104,13 +104,13 @@ function ContextBlock({ item }) {
     if (m.is_uiuc_alum != null) {
       parts.push(
         <span key="alum">
-          <strong>Alum</strong> · {m.is_uiuc_alum ? "UIUC alum" : "Not UIUC alum"}
+          <strong>Alum</strong> {m.is_uiuc_alum ? "UIUC alum" : "Not UIUC alum"}
         </span>
       );
     }
-    if (m.company_signal) parts.push(<span key="sig"><strong>Signal</strong> · {m.company_signal}</span>);
-    if (m.hooks) parts.push(<span key="hooks"><strong>Hooks</strong><br />{String(m.hooks).replace(/\n/g, " · ")}</span>);
-    if (m.email_basis) parts.push(<span key="basis"><strong>Email basis</strong> · {m.email_basis}</span>);
+    if (m.company_signal) parts.push(<span key="sig"><strong>Signal</strong> {m.company_signal}</span>);
+    if (m.hooks) parts.push(<span key="hooks"><strong>Hooks</strong><br />{String(m.hooks).replace(/\n/g, "; ")}</span>);
+    if (m.email_basis) parts.push(<span key="basis"><strong>Email basis</strong> {m.email_basis}</span>);
     if (m.brief_file) parts.push(
       <a key="brief" href={"/brief/" + encodeURIComponent(m.brief_file)}>Full brief</a>
     );
@@ -119,7 +119,7 @@ function ContextBlock({ item }) {
       <details className="context">
         <summary>Research context</summary>
         <div className="ctx-body">
-          {parts.map((p, i) => <span key={i}>{i > 0 && <br />}{p}</span>)}
+          {parts.map((p, i) => <div key={i}>{p}</div>)}
         </div>
       </details>
     );
@@ -330,7 +330,7 @@ export default function Approvals({
         (nBounce ? nBounce + " bounce" : ""),
         (nFollowup ? nFollowup + " follow-up" : ""),
         (nOut ? nOut + " outreach" : ""),
-      ].filter(Boolean).join(" · ")
+      ].filter(Boolean).join(", ")
     : "";
 
   function setFocus(i) {
@@ -364,7 +364,7 @@ export default function Approvals({
         {bits.join(" ")}{" "}
         <a href={link} target="_blank" rel="noopener">Open in Gmail</a>
         {" · "}
-        <button className="linkish" onClick={() => handleUndo(id)}>Undo</button>
+        <button type="button" className="linkish" onClick={() => handleUndo(id)}>Undo</button>
       </span>
     );
     advanceAfterRemove(id);
@@ -383,7 +383,7 @@ export default function Approvals({
   async function handleUndo(id) {
     const { ok, data } = await postUndo(id);
     if (ok) {
-      addToast(data.undid === "approved" ? "Approval undone — draft deleted" : "Restored to queue");
+      addToast(data.undid === "approved" ? "Approval undone. Draft deleted." : "Restored to queue.");
       await Promise.all([refreshQueue(), refreshHistory()]);
     } else {
       addToast(data.error || "Could not undo");
@@ -458,7 +458,7 @@ export default function Approvals({
       <div className="section-head">
         <h2>Approvals <span className="qsplit">{splitLabel}</span></h2>
         <p className="hint">
-          <span className="kbd">j</span>/<span className="kbd">k</span> move · <span className="kbd">a</span> approve · <span className="kbd">?</span> help
+          <span className="kbd">j</span>/<span className="kbd">k</span> move, <span className="kbd">a</span> approve, <span className="kbd">?</span> help
         </p>
       </div>
 
@@ -552,25 +552,25 @@ export default function Approvals({
             <li className="sub">Nothing resolved yet today.</li>
           ) : (
             history.map(it => {
-              const when = (it.resolved || "").slice(11, 16) || "—";
-              const who = `${it.name} · ${it.company}`;
+              const when = (it.resolved || "").slice(11, 16) || "";
+              const who = [it.name, it.company].filter(Boolean).join(", ");
               if (it.status === "approved") {
                 return (
                   <li key={it.id}>
-                    <span className="ok">Approved</span> {who} · {when}
+                    <span className="ok">Approved</span> {who}{when ? `, ${when}` : ""}
                     {it.draft_link && <> · <a href={it.draft_link} target="_blank" rel="noopener">Open draft</a></>}
                     {" · "}
-                    <button className="linkish" onClick={() => handleUndo(it.id)}>Undo</button>
+                    <button type="button" className="linkish" onClick={() => handleUndo(it.id)}>Undo</button>
                   </li>
                 );
               }
-              const snooze = it.skip_until === "forever" ? " · forever"
-                : (it.skip_until ? " · until " + it.skip_until : "");
+              const snooze = it.skip_until === "forever" ? ", forever"
+                : (it.skip_until ? ", until " + it.skip_until : "");
               return (
                 <li key={it.id}>
-                  <span className="skiplabel">Skipped</span> {who}{snooze} · {when}
+                  <span className="skiplabel">Skipped</span> {who}{snooze}{when ? `, ${when}` : ""}
                   {" · "}
-                  <button className="linkish" onClick={() => handleUndo(it.id)}>Undo</button>
+                  <button type="button" className="linkish" onClick={() => handleUndo(it.id)}>Undo</button>
                 </li>
               );
             })

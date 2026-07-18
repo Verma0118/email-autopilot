@@ -13,7 +13,7 @@ function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
   if (queueN > 0) {
     return {
       title: "Clear Approvals first",
-      body: `${queueN} draft${queueN === 1 ? "" : "s"} waiting — review before starting another run.`,
+      body: `${queueN} draft${queueN === 1 ? "" : "s"} waiting. Review before starting another run.`,
       stage: null,
       label: null,
       goApprovals: true,
@@ -22,7 +22,7 @@ function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
   if (briefsN >= 2) {
     return {
       title: "Organize waiting briefs",
-      body: `${briefsN} prospect briefs are ready — cheaper than Scout.`,
+      body: `${briefsN} prospect briefs are ready. Cheaper than Scout.`,
       stage: "organize",
       label: "Run Organize",
     };
@@ -38,7 +38,7 @@ function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
   if (tokPct >= 45) {
     return {
       title: "Meter is mid-range",
-      body: `Autopilot meter at ${Math.round(tokPct)}% — prefer Triage or Organize over Scout.`,
+      body: `Autopilot meter at ${Math.round(tokPct)}%. Prefer Triage or Organize over Scout.`,
       stage: "triage",
       label: "Run Triage",
     };
@@ -61,18 +61,18 @@ export default function Overview({
   const tokDisplay = tokens.limit_hit ? "PAUSED" : (tokPct + "%");
   const hardPct = tokens.hard_pct != null ? tokens.hard_pct : 60;
   const tokDetail = tokens.limit_hit
-    ? "Claude session limit · try again after " + (tokens.limit_reset || "reset")
+    ? "Claude session limit. Try again after " + (tokens.limit_reset || "reset")
     : [
         (tokens.used || 0).toLocaleString(), " / ", (tokens.budget || 0).toLocaleString(),
-        " · stops at ", hardPct, "%",
-        " · ", (tokens.calls || 0), " calls since ", tokens.window_started || "—",
+        ", stops at ", hardPct, "%",
+        ", ", (tokens.calls || 0), " calls since ", tokens.window_started || "start",
       ].join("");
 
   const stageLabel = status.running ? (status.stage || "running") : "idle";
-  const lastRunText = status.running ? "running now…" : (status.detail || "—");
+  const lastRunText = status.running ? "running now…" : (status.detail || "idle");
   const rundown = status.running && (!status.rundown || status.rundown === "Updating…")
     ? "Updating…"
-    : (status.rundown || "—");
+    : (status.rundown || "No rundown yet.");
 
   const needsItems = Array.isArray(report.needs_you) ? report.needs_you : [];
   const normNeeds = needsItems.map(it => typeof it === "string" ? { id: it, text: it, href: null } : it);
@@ -120,14 +120,14 @@ export default function Overview({
     <>
       <div className="section-head">
         <h2>Overview</h2>
-        <p className="hint lastrun">Last run · <strong>{lastRunText}</strong></p>
+        <p className="hint lastrun">Last run: <strong>{lastRunText}</strong></p>
       </div>
 
       <div className="status-strip">
         <div className="block compact">
           <p className="label">Activity</p>
           <p className="big">{stageLabel}</p>
-          <p className="sub">{status.detail || "—"}</p>
+          <p className="sub">{status.detail || "idle"}</p>
           {status.stream && <span className="stream">{status.stream}</span>}
         </div>
         <div className={`block compact tok${tokClass}`}>

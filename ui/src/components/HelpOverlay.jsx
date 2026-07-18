@@ -8,7 +8,7 @@ export default function HelpOverlay({ open, onClose }) {
       <div className="help-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
         <h2 id="help-title">Keyboard shortcuts</h2>
         <dl>
-          <dt><span className="kbd">1</span>–<span className="kbd">3</span></dt>
+          <dt><span className="kbd">1</span> to <span className="kbd">3</span></dt>
           <dd>Approvals / Overview / Activity</dd>
           <dt><span className="kbd">j</span> / <span className="kbd">k</span></dt>
           <dd>Next / previous queue item</dd>

@@ -58,10 +58,10 @@ export default function Chrome({
     addToast("Pulling latest from GitHub…");
     const res = await postUpdate();
     if (!res.ok || !res.data.ok) {
-      addToast(res.data.error || res.data.message || "Update failed — check git on this Mac");
+      addToast(res.data.error || res.data.message || "Update failed. Check git on this Mac.");
       return;
     }
-    addToast(res.data.changed ? "Updated — reloading panel…" : "Already latest — reloading…");
+    addToast(res.data.changed ? "Updated. Reloading panel…" : "Already latest. Reloading…");
     setTimeout(() => location.reload(), 1400);
   }
 
@@ -100,7 +100,7 @@ export default function Chrome({
                   aria-haspopup="listbox"
                   onClick={() => setMoreOpen(o => !o)}
                 >
-                  More{moreSelected ? ` · ${modeLabel(runMode)}` : ""}
+                  More{moreSelected ? `: ${modeLabel(runMode)}` : ""}
                 </button>
                 {moreOpen && (
                   <div className="mode-more-menu" role="listbox">
