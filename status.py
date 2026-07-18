@@ -1,10 +1,11 @@
 """Live run status + stop flag + token metering (rolling 5h window)."""
 import json
 import os
+import re
 import subprocess
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import config
 
@@ -80,10 +81,79 @@ def check_stop():
 
 # ---------- token metering ----------
 
+def _tz():
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo("America/Los_Angeles")
+    except Exception:
+        return None
+
+
+def _clear_limit(data):
+    data.pop("limit_hit", None)
+    data.pop("limit_reset", None)
+    data.pop("limit_hit_at", None)
+    data.pop("limit_reset_at", None)
+    return data
+
+
+def _parse_reset_at(reset_text, hit_at=None):
+    """Parse '5:10pm' (optionally with tz note) into a unix timestamp."""
+    m = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)", reset_text or "", re.I)
+    if not m:
+        return None
+    hour, minute, ap = int(m.group(1)), int(m.group(2)), m.group(3).lower()
+    if ap == "pm" and hour != 12:
+        hour += 12
+    if ap == "am" and hour == 12:
+        hour = 0
+    tz = _tz()
+    now = datetime.now(tz) if tz else datetime.now()
+    reset_dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    hit = None
+    if hit_at:
+        try:
+            hit = datetime.fromtimestamp(hit_at, tz) if tz else datetime.fromtimestamp(hit_at)
+        except Exception:
+            hit = None
+    if hit and reset_dt <= hit:
+        reset_dt += timedelta(days=1)
+    return reset_dt.timestamp()
+
+
+def _refresh_limit_state(data):
+    """Drop stale Anthropic session-limit flags once the reset time has passed."""
+    if not data.get("limit_hit"):
+        return data, False
+    changed = False
+    reset_at = data.get("limit_reset_at")
+    if not reset_at:
+        reset_at = _parse_reset_at(data.get("limit_reset"), data.get("limit_hit_at"))
+        if reset_at:
+            data["limit_reset_at"] = reset_at
+            changed = True
+    now = time.time()
+    hit_at = data.get("limit_hit_at") or data.get("window_start") or 0
+    if reset_at and now >= reset_at:
+        _clear_limit(data)
+        return data, True
+    # Fallback: don't stick LIMIT forever if we couldn't parse a reset time
+    if (not reset_at) and hit_at and now - hit_at > 3 * 60 * 60:
+        _clear_limit(data)
+        return data, True
+    return data, changed
+
+
 def _load_tokens():
     if TOKENS_FILE.exists():
-        data = json.loads(TOKENS_FILE.read_text())
-        if time.time() - data.get("window_start", 0) < WINDOW_SECONDS:
+        try:
+            data = json.loads(TOKENS_FILE.read_text())
+        except Exception:
+            data = None
+        if data and time.time() - data.get("window_start", 0) < WINDOW_SECONDS:
+            data, changed = _refresh_limit_state(data)
+            if changed:
+                TOKENS_FILE.write_text(json.dumps(data))
             return data
     return {"window_start": time.time(), "tokens": 0, "calls": 0, "warned": False}
 
@@ -91,6 +161,9 @@ def _load_tokens():
 def add_usage(usage):
     """usage: the 'usage' dict from a claude -p JSON envelope."""
     data = _load_tokens()
+    # A successful call means the Anthropic session limit is no longer blocking us
+    if data.get("limit_hit"):
+        _clear_limit(data)
     data["tokens"] += (usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
                        + usage.get("cache_creation_input_tokens", 0))
     data["calls"] += 1
@@ -118,14 +191,19 @@ def limit_hit(reset_text):
     data = _load_tokens()
     data["limit_hit"] = True
     data["limit_reset"] = reset_text
+    data["limit_hit_at"] = time.time()
+    reset_at = _parse_reset_at(reset_text, data["limit_hit_at"])
+    if reset_at:
+        data["limit_reset_at"] = reset_at
     TOKENS_FILE.write_text(json.dumps(data))
 
 
 def tokens_snapshot():
     data = _load_tokens()
     budget = config.SESSION_TOKEN_BUDGET
+    limited = bool(data.get("limit_hit"))
     return {"used": data["tokens"], "budget": budget, "calls": data["calls"],
-            "pct": 100.0 if data.get("limit_hit") else (round(100 * data["tokens"] / budget, 1) if budget else 0),
-            "limit_hit": data.get("limit_hit", False),
+            "pct": 100.0 if limited else (round(100 * data["tokens"] / budget, 1) if budget else 0),
+            "limit_hit": limited,
             "limit_reset": data.get("limit_reset"),
             "window_started": datetime.fromtimestamp(data["window_start"]).strftime("%H:%M")}
