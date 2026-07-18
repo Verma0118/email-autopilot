@@ -624,6 +624,29 @@ background:#f7faf8;text-align:center}strong{display:block;font-size:1.2rem;margi
                 until = queue_store.skip_until_days(
                     "forever" if raw == "forever" else raw)
                 queue_store.resolve(item_id, "skipped", skip_until=until)
+                # Clear stage latches so a later run can try again after skip
+                if item.get("kind") in ("bounce", "followup"):
+                    try:
+                        import crm
+                        cid = (item.get("meta") or {}).get("contact_id")
+                        contacts = crm.load()
+                        for c in contacts:
+                            if c.get("id") != cid:
+                                continue
+                            if item.get("kind") == "bounce":
+                                br = (c.get("autopilot") or {}).get("bounce_retry") or {}
+                                if br.get("status") == "queued":
+                                    c["autopilot"]["bounce_retry"] = None
+                                    crm.touch(c, "bounce_skip", item_id)
+                            else:
+                                if str(c.get("follow_up_draft_id") or "").startswith("queue:"):
+                                    c["follow_up_draft_id"] = None
+                                    c["follow_up_drafted_at"] = None
+                                    crm.touch(c, "followup_skip", item_id)
+                            crm.save(contacts)
+                            break
+                    except Exception:
+                        pass
                 self._send(200, json.dumps({"ok": True, "skip_until": until}))
                 return
             try:
@@ -635,13 +658,26 @@ background:#f7faf8;text-align:center}strong{display:block;font-size:1.2rem;margi
                 if not to_email:
                     self._send(400, '{"error":"To address is required"}')
                     return
-                if item["kind"] == "reply" and item.get("thread_id"):
+                meta = item.get("meta") or {}
+                email_type = meta.get("email_type")
+                attach_paths = []
+                if item["kind"] in ("outreach", "bounce"):
+                    attach_paths = list(config.attachments_for(email_type))
+                warn = None
+                expected_names = meta.get("attachments") or []
+                if expected_names and not attach_paths:
+                    warn = ("Attachment files missing under assets/ "
+                            f"({', '.join(expected_names)}); draft created without them")
+
+                if item["kind"] in ("reply", "followup") and item.get("thread_id"):
                     draft = gmail.create_reply_draft(
                         to=to_email, subject=subject, body_html=body_html,
-                        thread_id=item["thread_id"], in_reply_to=item.get("in_reply_to"))
+                        thread_id=item["thread_id"], in_reply_to=item.get("in_reply_to"),
+                        attachments=attach_paths)
                 else:
                     draft = gmail.create_draft(
-                        subject=subject, body_html=body_html, to=to_email)
+                        subject=subject, body_html=body_html, to=to_email,
+                        attachments=attach_paths)
                 link = gmail.draft_link(draft.get("thread_id"))
                 contact_id = None
                 if item["kind"] == "outreach":
@@ -652,9 +688,10 @@ background:#f7faf8;text-align:center}strong{display:block;font-size:1.2rem;margi
                     contacts.append({
                         "id": contact_id,
                         "name": item["name"], "email": to_email,
-                        "linkedin_url": item["meta"].get("linkedin"),
-                        "company": item["company"], "role": None,
-                        "email_type": item["meta"].get("email_type"),
+                        "linkedin_url": meta.get("linkedin"),
+                        "company": item["company"],
+                        "role": meta.get("role"),
+                        "email_type": email_type,
                         "sent_at": None, "drafted_at": crm.now_iso(),
                         "status": "drafted", "gmail_draft_id": draft["draft_id"],
                         "gmail_thread_id": draft.get("thread_id"), "gmail_message_id": None,
@@ -666,13 +703,52 @@ background:#f7faf8;text-align:center}strong{display:block;font-size:1.2rem;margi
                                       "last_touched": crm.now_iso(), "history": []},
                     })
                     crm.save(contacts)
+                elif item["kind"] == "bounce":
+                    contacts = crm.load()
+                    cid = meta.get("contact_id")
+                    for c in contacts:
+                        if c.get("id") != cid:
+                            continue
+                        old = meta.get("old_email") or c.get("email")
+                        c["email"] = to_email
+                        ap = c.setdefault("autopilot", {})
+                        ap["bounce_retry"] = {
+                            "status": "retried",
+                            "old_email": old,
+                            "corrected_email": to_email,
+                            "drafted_at": crm.now_iso(),
+                            "evidence": meta.get("evidence") or [],
+                        }
+                        crm.set_status(c, "bounce_fixed", "bounce_approved", f"-> {to_email}")
+                        c["follow_up_due"] = crm.due_plus_followup_days()
+                        c["gmail_draft_id"] = draft["draft_id"]
+                        crm.save(contacts)
+                        contact_id = cid
+                        break
+                elif item["kind"] == "followup":
+                    contacts = crm.load()
+                    cid = meta.get("contact_id")
+                    for c in contacts:
+                        if c.get("id") != cid:
+                            continue
+                        crm.set_status(c, "followed_up", "followup_approved", draft["draft_id"])
+                        c["follow_up_count"] = 1
+                        c["follow_up_draft_id"] = draft["draft_id"]
+                        c["follow_up_drafted_at"] = crm.now_iso()
+                        crm.save(contacts)
+                        contact_id = cid
+                        break
                 queue_store.resolve(item_id, "approved", gmail_draft_id=draft["draft_id"],
                                     draft_link=link, contact_id=contact_id)
-                self._send(200, json.dumps({
+                payload = {
                     "ok": True,
                     "draft_id": draft["draft_id"],
                     "draft_link": link,
-                }))
+                    "attached": draft.get("attached") or [],
+                }
+                if warn:
+                    payload["warn"] = warn
+                self._send(200, json.dumps(payload))
             except Exception as e:
                 self._send(500, json.dumps({"error": str(e)[:300]}))
         else:

@@ -1,8 +1,10 @@
-"""Stage 3b: reply nudges.
+"""Reply-nudge helpers (legacy stage).
 
-Contacts who REPLIED, promised future contact, then went silent past the
-promised window. LLM reads the whole thread and decides + drafts; Python
-gates, lints, and creates the in-thread reply draft.
+The live Full/Triage pipeline uses reply_agent + reply_draft.md for both
+direct replies and passed-promise nudges into the Approvals queue.
+
+This module still exports _thread_text (used by reply_agent) and a standalone
+run() for manual --stage experiments; prefer reply_agent for daily use.
 """
 import re
 from datetime import date, datetime, timedelta

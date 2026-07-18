@@ -17,7 +17,10 @@ CAL_URL_RE = re.compile(r'href="(https://(?:calendly\.com|cal\.com|calendar\.app
 
 
 def _calendar_url():
-    """Pull Aarav's real scheduling link from a recent sent outreach email."""
+    """Prefer config.CALENDAR_URL; else scrape a recent sent outreach email."""
+    configured = (getattr(config, "CALENDAR_URL", None) or "").strip()
+    if configured.startswith("http"):
+        return configured
     try:
         for m in gmail.search_messages("in:sent newer_than:60d", max_results=15):
             html, _ = gmail.get_message_body(m["id"])
@@ -29,10 +32,16 @@ def _calendar_url():
     return None
 
 
-def _subject_for(email_type):
-    if email_type == "nobe_pd_outreach":
-        return None  # templated per company below
-    return config.FIXED_SUBJECTS.get(email_type)
+def _resolve_email_type(rec, brief):
+    """Track default + UIUC alum evidence → concrete email_type."""
+    email_type = rec.get("email_type") or "startup_discovery"
+    if email_type in ("cold_outreach", "cold_outreach_not_alum"):
+        if brief.get("is_uiuc_alum") is False:
+            return "cold_outreach_not_alum"
+        if brief.get("suggested_email_type") == "cold_outreach_not_alum":
+            return "cold_outreach_not_alum"
+        return "cold_outreach"
+    return email_type
 
 
 def _track_rules(email_type):
@@ -43,7 +52,6 @@ def _track_rules(email_type):
     path = config.PROMPT_DIR / f"outreach_rules_{key}.md"
     if path.exists():
         return path.read_text().strip()
-    # Fallback: startup rules so organize never sends an empty rules block
     fallback = config.PROMPT_DIR / "outreach_rules_startup_discovery.md"
     return fallback.read_text().strip() if fallback.exists() else ""
 
@@ -91,11 +99,14 @@ def run(contacts, report, log, dry_run=False):
     for path, rec in todo:
         status.check_stop()
         cand, brief = rec["candidate"], rec["brief"]
-        email_type = rec.get("email_type", "startup_discovery")
+        email_type = _resolve_email_type(rec, brief)
         track_label = config.STREAM_LABELS.get(email_type, rec.get("track", ""))
         status.update(detail=f"writing outreach draft: {cand.get('name')} ({cand.get('company')})",
                       stream=track_label)
-        subject = _subject_for(email_type) or f"{cand.get('company')} x NOBE | Engineering Project, Fall 2026"
+        subject = config.subject_for(email_type, cand.get("company"))
+        if not subject:
+            r["skipped"].append(f"{cand.get('name')}: no subject for {email_type}")
+            continue
         hooks = "\n".join(f"- {h.get('fact')} ({h.get('url')})"
                           for h in brief.get("hooks", []) if isinstance(h, dict))
         prompt = template
@@ -134,6 +145,7 @@ def run(contacts, report, log, dry_run=False):
             continue
 
         address = (brief.get("email") or {}).get("address")
+        attach_names = [p.name for p in config.attachments_for(email_type)]
         item = queue_store.add(
             kind="outreach", track_label=track_label,
             name=cand.get("name"), company=cand.get("company"), email=address,
@@ -141,11 +153,16 @@ def run(contacts, report, log, dry_run=False):
             why=result.get("hook_used", ""),
             meta={"brief_file": path.name, "email_type": email_type,
                   "linkedin": cand.get("linkedin_url"),
+                  "role": cand.get("role"),
+                  "segment": cand.get("segment"),
+                  "is_uiuc_alum": brief.get("is_uiuc_alum"),
                   "email_basis": (brief.get("email") or {}).get("basis"),
                   "company_signal": brief.get("company_signal"),
-                  "hooks": hooks[:800] if hooks else ""},
+                  "hooks": hooks[:800] if hooks else "",
+                  "attachments": attach_names},
         )
         rec["organized"] = True
+        rec["email_type"] = email_type
         path.write_text(json.dumps(rec, indent=1))
         log({"action": "outreach_queued", "candidate": cand.get("name"), "item": item["id"]})
         r["queued"].append(f"[{track_label}] {cand.get('name')} ({cand.get('company')})")

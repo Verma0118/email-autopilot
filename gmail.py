@@ -6,8 +6,12 @@ in this system: it is structurally incapable of sending email.
 """
 import base64
 import json
+import mimetypes
 import re
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 
 import config
 
@@ -157,32 +161,62 @@ def list_drafts_meta(max_results=100):
 
 # ---------- write side (drafts ONLY — no send scope exists) ----------
 
-def create_draft(subject, body_html, to):
-    svc = get_service()
-    mime = MIMEText(body_html, "html")
-    mime["To"] = to
-    mime["From"] = config.ACCOUNT
-    mime["Subject"] = subject
-    raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
-    draft = svc.users().drafts().create(userId="me", body={"message": {"raw": raw}}).execute()
-    return {"draft_id": draft["id"], "message_id": draft["message"]["id"],
-            "thread_id": draft["message"].get("threadId")}
+def _attach_files(mime, attachments):
+    """Attach existing files to a MIMEMultipart message. Returns names attached."""
+    attached = []
+    for path in attachments or []:
+        p = Path(path)
+        if not p.is_file():
+            continue
+        ctype, _ = mimetypes.guess_type(str(p))
+        maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
+        data = p.read_bytes()
+        if maintype == "application":
+            part = MIMEApplication(data, _subtype=subtype or "octet-stream")
+        else:
+            part = MIMEApplication(data)
+        part.add_header("Content-Disposition", "attachment", filename=p.name)
+        mime.attach(part)
+        attached.append(p.name)
+    return attached
 
 
-def create_reply_draft(to, subject, body_html, thread_id, in_reply_to):
-    svc = get_service()
-    mime = MIMEText(body_html, "html")
+def _build_mime(subject, body_html, to, attachments=None, in_reply_to=None):
+    files = [Path(p) for p in (attachments or []) if Path(p).is_file()]
+    if files:
+        mime = MIMEMultipart()
+        mime.attach(MIMEText(body_html, "html"))
+        attached = _attach_files(mime, files)
+    else:
+        mime = MIMEText(body_html, "html")
+        attached = []
     mime["To"] = to
     mime["From"] = config.ACCOUNT
     mime["Subject"] = subject
     if in_reply_to:
         mime["In-Reply-To"] = in_reply_to
         mime["References"] = in_reply_to
+    return mime, attached
+
+
+def create_draft(subject, body_html, to, attachments=None):
+    svc = get_service()
+    mime, attached = _build_mime(subject, body_html, to, attachments=attachments)
+    raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
+    draft = svc.users().drafts().create(userId="me", body={"message": {"raw": raw}}).execute()
+    return {"draft_id": draft["id"], "message_id": draft["message"]["id"],
+            "thread_id": draft["message"].get("threadId"), "attached": attached}
+
+
+def create_reply_draft(to, subject, body_html, thread_id, in_reply_to, attachments=None):
+    svc = get_service()
+    mime, attached = _build_mime(
+        subject, body_html, to, attachments=attachments, in_reply_to=in_reply_to)
     raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
     body = {"message": {"raw": raw, "threadId": thread_id}}
     draft = svc.users().drafts().create(userId="me", body=body).execute()
     return {"draft_id": draft["id"], "message_id": draft["message"]["id"],
-            "thread_id": draft["message"].get("threadId")}
+            "thread_id": draft["message"].get("threadId"), "attached": attached}
 
 
 def draft_link(thread_id):

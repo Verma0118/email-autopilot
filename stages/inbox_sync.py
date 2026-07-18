@@ -16,13 +16,12 @@ import status
 
 
 def _expected_subject(contact):
-    return config.FIXED_SUBJECTS.get(contact.get("email_type"), None)
+    return config.subject_for(contact.get("email_type"), contact.get("company"))
 
 
-def _subject_matches(subject, expected):
-    if not expected:
-        return False
-    return subject.strip().removeprefix("Re: ").strip() == expected
+def _subject_matches(subject, contact):
+    return config.subject_matches(
+        subject, contact.get("email_type"), contact.get("company"))
 
 
 def _ms_to_date(ms):
@@ -42,7 +41,7 @@ def run(contacts, report, dry_run=False):
             continue
         try:
             hits = [m for m in gmail.search_sent_to(c["email"])
-                    if _subject_matches(m["subject"], _expected_subject(c))]
+                    if _subject_matches(m["subject"], c)]
         except Exception as e:
             r["errors"].append(f"sent detection {c['name']}: {e}")
             continue
@@ -71,7 +70,7 @@ def run(contacts, report, dry_run=False):
             continue
         try:
             hits = [m for m in gmail.search_sent_to(c["email"])
-                    if _subject_matches(m["subject"], expected)]
+                    if _subject_matches(m["subject"], c)]
         except Exception as e:
             r["errors"].append(f"backfill {c['name']}: {e}")
             continue

@@ -40,7 +40,42 @@ def _fill(template, mapping):
     return template
 
 
+def _track_prompt_key(track_key, track):
+    """Map ICP track key / email_type → prompt file suffix."""
+    et = track.get("email_type") or track_key
+    if et in ("cold_outreach", "cold_outreach_not_alum") or track_key == "internship":
+        return "internship"
+    if et == "nobe_pd_outreach" or track_key == "nobe":
+        return "nobe"
+    return "startup_discovery"
+
+
+def _read_track_snippet(prefix, track_key, track):
+    key = _track_prompt_key(track_key, track)
+    path = config.PROMPT_DIR / f"{prefix}_{key}.md"
+    if path.exists():
+        return path.read_text().strip()
+    fallback = config.PROMPT_DIR / f"{prefix}_startup_discovery.md"
+    return fallback.read_text().strip() if fallback.exists() else ""
+
+
+def _resolve_email_type(track, brief):
+    """Pick email_type from track default + brief alum / suggested fields."""
+    default = track.get("email_type") or "startup_discovery"
+    suggested = brief.get("suggested_email_type") or default
+    if default in ("cold_outreach", "cold_outreach_not_alum"):
+        if brief.get("is_uiuc_alum") is False:
+            return "cold_outreach_not_alum"
+        if suggested == "cold_outreach_not_alum":
+            return "cold_outreach_not_alum"
+        return "cold_outreach"
+    if default == "nobe_pd_outreach":
+        return "nobe_pd_outreach"
+    return "startup_discovery"
+
+
 def _brief_prompt(candidate, track_key, track):
+    default_et = track.get("email_type") or "startup_discovery"
     return _fill((config.PROMPT_DIR / "prospect_brief.md").read_text(), {
         "<<NAME>>": candidate.get("name"),
         "<<ROLE>>": candidate.get("role"),
@@ -49,6 +84,8 @@ def _brief_prompt(candidate, track_key, track):
         "<<SOURCE>>": candidate.get("source_url"),
         "<<SEGMENT>>": f"{track_key} / {candidate.get('segment', '')}",
         "<<TRACK_WHO>>": track.get("who"),
+        "<<DEFAULT_EMAIL_TYPE>>": default_et,
+        "<<VERIFY_RULES>>": _read_track_snippet("prospect_verify", track_key, track),
     })
 
 
@@ -61,17 +98,21 @@ def _write_brief(candidate, brief, track_key, track, dry_run):
     slug = f"{date.today().isoformat()}-{track_key}-{_slug(candidate['name'])}"
     jpath = config.QUEUE_PROSPECTS / f"{slug}.json"
     mpath = config.QUEUE_PROSPECTS / f"{slug}.md"
+    email_type = _resolve_email_type(track, brief)
     record = {"candidate": candidate, "brief": brief, "track": track_key,
-              "email_type": track["email_type"], "date": date.today().isoformat(),
+              "email_type": email_type, "date": date.today().isoformat(),
               "organized": False}
     hooks = "\n".join(f"- {h.get('fact')} ({h.get('url')})" for h in brief.get("hooks", []) if isinstance(h, dict))
     email = brief.get("email") or {}
+    alum = brief.get("is_uiuc_alum")
+    alum_bit = {True: "yes", False: "no"}.get(alum, "unknown")
     md = f"""# Prospect Brief [{track['label']}]: {candidate['name']} — {candidate['company']}
 Generated: {date.today().isoformat()} | Segment: {candidate.get('segment')}
 
 - **Role:** {candidate.get('role')} (confirmed: {brief.get('role_confirmed')}, source: {brief.get('role_source')})
 - **LinkedIn:** {candidate.get('linkedin_url')}
-- **Email type:** {track['email_type']}
+- **Email type:** {email_type}
+- **UIUC alum:** {alum_bit}
 - **Email:** {email.get('address')} (basis: {email.get('basis')})
 - **Evidence:** {', '.join(email.get('evidence_urls', []))}
 
@@ -180,6 +221,7 @@ def run(contacts, report, cap_override, log, dry_run=False):
         prompt = _fill(discovery_template, {
             "<<SEGMENT_NAME>>": seg["name"], "<<SEGMENT_BRIEF>>": seg["brief"],
             "<<TRACK_WHO>>": track.get("who"), "<<TRACK_WHO_NOT>>": track.get("who_not"),
+            "<<WHY_ICP_HINT>>": _read_track_snippet("prospect_why", track_key, track),
         })
         try:
             found = llm.call(prompt, use_exa=True, max_turns=discovery_turns)

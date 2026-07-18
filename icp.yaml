@@ -80,3 +80,5 @@ seed_candidates:
   - {name: Luis Figueiredo, role: Chief UAS Pilot / Program Coordinator, company: Elizabeth Police Department NJ, linkedin_url: "https://linkedin.com/in/luis-figueiredo-1b90b31ab", track: startup_discovery, segment: dfr-programs, why_icp: First US BVLOS waiver for Class Bravo airspace, 12+ full-time pilots}
   - {name: Geoff Goodson, role: Police Sergeant UAS and DFR Supervisor, company: City of Temple TX, linkedin_url: "https://linkedin.com/in/geoff-goodson-a474644b", track: startup_discovery, segment: dfr-programs, why_icp: High-volume drone deployments, real-time crime center integration}
   - {name: LeAnne Hartin, role: sUAS Program Manager / Unit Commander, company: Law Enforcement (regional), linkedin_url: "https://linkedin.com/in/leanne-hartin-5130a7341", track: startup_discovery, segment: dfr-programs, why_icp: Fleet lifecycle plus records management and compliance audits}
+  # Add internship / NOBE seeds here when you have verified LinkedIn URLs.
+  # With SCOUT_MAX_TRACKS_PER_RUN=2 those tracks still get discovery rotation.

@@ -264,10 +264,12 @@ def _contact_index(contacts):
 _VERIFIED_EMAIL_RE = re.compile(r"verified address ([^\s,]+)", re.I)
 
 
-def _build_needs(contacts, sync, we_owe, br, pending_emails=None):
+def _build_needs(contacts, sync, we_owe, br, pending_emails=None, briefs_n=0,
+                 pending_kinds=None):
     """Structured Needs-you rows for dashboard + panel (text, href, dismiss id)."""
     idx = _contact_index(contacts)
     pending = {e.lower() for e in (pending_emails or []) if e}
+    pending_kinds = pending_kinds or {}
     items = []
 
     def add(kind, label, raw, href=None):
@@ -298,6 +300,27 @@ def _build_needs(contacts, sync, we_owe, br, pending_emails=None):
         add("manual", "Verified address found, send manually", x, href)
     for x in sync.get("backfill_ambiguous", []):
         add("ambiguous", "Thread ambiguous, check manually", x, None)
+    # Unresolved bounces not yet queued for Approvals
+    for c in contacts or []:
+        if c.get("status") != "bounced":
+            continue
+        email = (c.get("email") or "").lower()
+        if email and email in pending:
+            continue
+        br_status = ((c.get("autopilot") or {}).get("bounce_retry") or {}).get("status")
+        if br_status in ("queued", "retried", "dead", "manual"):
+            continue
+        label = f"{c.get('name')} ({c.get('company') or '?'})"
+        add("bounce", "Unresolved bounce — run Bounce or Triage", label,
+            gmail.thread_link(c.get("gmail_thread_id")))
+    if briefs_n >= 2:
+        add("briefs", "Briefs waiting — run Organize",
+            f"{briefs_n} unorganized prospect briefs", "/#overview")
+    bounce_pending = pending_kinds.get("bounce", 0)
+    if bounce_pending:
+        add("bounce_q", "Bounce fixes in Approvals",
+            f"{bounce_pending} corrected draft{'s' if bounce_pending != 1 else ''} to review",
+            "/#approvals")
     return items
 
 
@@ -352,23 +375,38 @@ def render(contacts, report, llm_calls, dry_run=False):
         except Exception:
             unorganized.append({"file": path.name, "name": path.stem, "company": "", "track": ""})
     briefs_queued = len(unorganized)
-    drafts_today = nu.get("drafted", []) + fu.get("drafted", [])
-    linked_bounce = [x for x in br.get("fixed", []) if DRAFT_LINK_RE.search(x)]
+    org = report.get("organizer", {})
+    # Bounce/followups/nudges now land in Approvals; only legacy Gmail-direct lines remain
+    drafts_today = [x for x in (nu.get("drafted", []) + fu.get("drafted", []))
+                    if DRAFT_LINK_RE.search(x or "")]
+    linked_bounce = [x for x in br.get("fixed", []) if DRAFT_LINK_RE.search(x or "")]
     gmail_drafts = _parse_gmail_drafts(drafts_today + linked_bounce)
     errors = (sync.get("errors", []) + ia.get("errors", []) + ra.get("errors", [])
-              + nu.get("errors", []) + fu.get("errors", [])
+              + nu.get("errors", []) + fu.get("errors", []) + org.get("errors", [])
               + br.get("errors", []) + pr.get("errors", []) + report.get("fatal", []))
     we_owe = list(ra.get("we_owe", []) or []) + list(nu.get("we_owe", []) or [])
-    pending_emails = [i.get("email") for i in queue_store.pending()]
-    needs_items = _build_needs(contacts, sync, we_owe, br, pending_emails=pending_emails)
-    bounce_rows = ([f"Fixed, corrected draft in Gmail: {x}" for x in br.get("fixed", [])]
-                   + [f"No confident fix, dead: {x}" for x in br.get("dead", [])])
+    pending_items = queue_store.pending()
+    pending_emails = [i.get("email") for i in pending_items]
+    pending_kinds = {}
+    for i in pending_items:
+        k = i.get("kind") or "other"
+        pending_kinds[k] = pending_kinds.get(k, 0) + 1
+    needs_items = _build_needs(
+        contacts, sync, we_owe, br, pending_emails=pending_emails,
+        briefs_n=briefs_queued, pending_kinds=pending_kinds)
+    bounce_rows = (
+        [f"Queued for Approvals: {x}" for x in br.get("queued", [])]
+        + [f"Fixed (legacy Gmail draft): {x}" for x in br.get("fixed", [])]
+        + [f"Send manually: {x}" for x in br.get("manual", [])]
+        + [f"No confident fix, dead: {x}" for x in br.get("dead", [])]
+    )
     action_items = ia.get("action_items") or []
     now = datetime.now().strftime("%A %b %d, %I:%M %p")
     ok = not errors
     status_pill = (f'<span class="pill ok">{_I["check"]}All clear</span>' if ok
                    else f'<span class="pill err">{_I["alert"]}{len(errors)} error{"s" if len(errors) != 1 else ""}</span>')
     needs_n = len(needs_items)
+    approval_n = len(pending_items)
     needs_block = (
         f'<div class="priority rise" aria-label="Needs you">'
         f'<h2>{_I["user"]}Needs you <span class="count">{needs_n}</span></h2>'
@@ -395,14 +433,17 @@ def render(contacts, report, llm_calls, dry_run=False):
 
 <section class="tiles rise" aria-label="Pipeline totals">
   <div class="tile hot"><span class="n">{needs_n}</span><span class="l">items need you</span></div>
-  <div class="tile"><span class="n">{len(gmail_drafts)}</span><span class="l">drafts to review in Gmail</span></div>
+  <div class="tile"><span class="n">{approval_n}</span><span class="l">in Approvals queue</span></div>
   <div class="tile"><span class="n">{counts.get('replied', 0) + counts.get('converted', 0)}</span><span class="l">open conversations</span></div>
   <div class="tile"><span class="n">{counts.get('bounced', 0)}</span><span class="l">bounces unresolved</span></div>
   <div class="tile"><span class="n">{briefs_queued}</span><span class="l">briefs awaiting organize</span></div>
-  <div class="tile"><span class="n">{backlog}</span><span class="l">cold backlog (paused)</span></div>
+  <div class="tile"><span class="n">{backlog}</span><span class="l">cold backlog{" (paused)" if not config.COLD_FOLLOWUPS_ENABLED else ""}</span></div>
 </section>
 
-{_sec("Drafts waiting in Gmail — review, then send", "mail", drafts_today + linked_bounce, "good", "check", "No drafts created today.")}
+{_sec("Approvals this run", "mail",
+      (ra.get("queued") or []) + (org.get("queued") or []) + (br.get("queued") or []) + (fu.get("queued") or []),
+      "good", "check", "Nothing new queued for Approvals.")}
+{_sec("Legacy Gmail drafts (if any)", "mail", drafts_today + linked_bounce, "good", "check", "No direct-to-Gmail drafts today.")}
 {_sec("Bounce handling", "zap", bounce_rows, "warn", "alert", "No bounce activity today.")}
 {_sec("New prospect briefs", "search", pr.get("briefs", []), "good", "check", "No new briefs today.")}
 {_sec("Errors", "bug", errors, "bad", "x", "No errors.")}
@@ -442,7 +483,7 @@ if (location.hostname === "127.0.0.1" || location.hostname === "localhost")
         "open_conversations": counts.get("replied", 0) + counts.get("converted", 0),
         "bounces": counts.get("bounced", 0),
         "summary": (
-            f"{needs_n} need you · {len(gmail_drafts)} Gmail drafts · "
+            f"{needs_n} need you · {approval_n} in Approvals · "
             f"{briefs_queued} briefs to organize · {len(errors)} errors"
         ),
     }, indent=1))

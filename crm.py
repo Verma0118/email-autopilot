@@ -98,6 +98,8 @@ def followup_candidates(contacts, today=None):
         and c.get("autopilot", {}).get("thread_backfill") == "ok"
         and c.get("gmail_thread_id")
         and c.get("gmail_message_id")
+        # Already sitting in Approvals (queue:id) or has a Gmail draft id
+        and not c.get("follow_up_draft_id")
     ]
     out.sort(key=lambda c: c.get("follow_up_due") or "9999")
     return out

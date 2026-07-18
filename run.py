@@ -16,6 +16,9 @@ Pipeline (full run):
      reply → organize (drain waiting) → scout (if meter OK + few waiting)
      → organize (new briefs) → bounce → cold followups (if enabled)
   3) Digest + publish
+
+All LLM drafts (reply, outreach, bounce, followup) go to Approvals — never
+straight to Gmail. Scout covers startup / internship / NOBE tracks.
 """
 import argparse
 import json
