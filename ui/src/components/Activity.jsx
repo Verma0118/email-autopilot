@@ -1,9 +1,9 @@
 const PIPELINE_STAGES = [
   ["inbox", "Inbox"],
   ["reply", "Reply"],
-  ["bounce", "Bounce"],
-  ["scout", "Scout"],
   ["organize", "Organize"],
+  ["scout", "Scout"],
+  ["bounce", "Bounce"],
   ["digest", "Digest"],
 ];
 

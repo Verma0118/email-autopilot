@@ -580,6 +580,35 @@ blockquote.body {
 }
 .chip:hover { color: var(--ink); background: rgba(21, 36, 30, 0.04); }
 .chip.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.track-filters {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding-left: 8px;
+  margin-left: 4px;
+  border-left: 1px solid var(--line);
+}
+.track-chip {
+  font-size: 0.74rem;
+  min-height: 28px;
+  padding: 0 10px;
+}
+.kind-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: none;
+}
+.kind-badge.kind-reply { background: var(--good-soft); color: var(--good); }
+.kind-badge.kind-bounce { background: var(--warn-soft); color: var(--warn); }
+.kind-badge.kind-outreach { background: var(--accent-soft); color: var(--accent); }
+.kind-badge.kind-followup { background: rgba(21, 36, 30, 0.06); color: var(--ink2); }
 .qsplit { color: var(--ink3); font-size: 0.9rem; margin-left: 8px; font-weight: 500; }
 .qsearch {
   font: inherit;

@@ -3,6 +3,8 @@ import { postRun, postStop, postUpdate } from "../api.js";
 const MODES = [
   { label: "Full", stage: "" },
   { label: "Triage", stage: "triage" },
+  { label: "Reply", stage: "reply" },
+  { label: "Bounce", stage: "bounce" },
   { label: "Scout", stage: "scout" },
   { label: "Organize", stage: "organize" },
   { label: "Digest", stage: "digest" },
@@ -23,7 +25,7 @@ export default function Chrome({
     const res = await postRun(runMode || null);
     if (res.status === 409) { addToast("Already running"); return; }
     if (!res.ok) { addToast("Could not start run"); return; }
-    const label = runMode === "triage" ? "Triage" : (runMode || "Full");
+    const label = MODES.find(m => m.stage === runMode)?.label || "Full";
     addToast(label + " run started");
     await pollStatus();
   }
@@ -60,7 +62,7 @@ export default function Chrome({
             <div className="run-modes" title="What to run" aria-label="Run mode">
               {MODES.map(m => (
                 <button
-                  key={m.stage}
+                  key={m.stage || "full"}
                   type="button"
                   className={`chip${runMode === m.stage ? " active" : ""}`}
                   onClick={() => setRunMode(m.stage)}

@@ -1,5 +1,28 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { postApprove, postSkip, postUndo, postSave } from "../api.js";
+
+const KIND_PRIORITY = { reply: 0, bounce: 1, followup: 2, outreach: 3 };
+
+const KIND_LABELS = {
+  reply: "Reply",
+  bounce: "Bounce",
+  outreach: "Outreach",
+  followup: "Follow-up",
+};
+
+const FILTERS = [
+  { id: "all", label: "All" },
+  { id: "reply", label: "Replies" },
+  { id: "bounce", label: "Bounce" },
+  { id: "outreach", label: "Outreach" },
+  { id: "followup", label: "Follow-up" },
+];
+
+const TRACK_CHIPS = [
+  { id: "startup", label: "Startup" },
+  { id: "internship", label: "Internship" },
+  { id: "nobe", label: "NOBE" },
+];
 
 function sanitizeHtml(html) {
   return String(html ?? "")
@@ -10,16 +33,22 @@ function sanitizeHtml(html) {
 
 function sortQueue(q) {
   return [...q].sort((a, b) => {
-    if (a.kind === "reply" && b.kind !== "reply") return -1;
-    if (a.kind !== "reply" && b.kind === "reply") return 1;
+    const pa = KIND_PRIORITY[a.kind] ?? 99;
+    const pb = KIND_PRIORITY[b.kind] ?? 99;
+    if (pa !== pb) return pa - pb;
     return (a.created || "").localeCompare(b.created || "");
   });
 }
 
-function filterQueue(q, filter, search) {
+function matchesTrack(item, trackId) {
+  const t = String(item.track || "").toLowerCase();
+  return t.includes(trackId);
+}
+
+function filterQueue(q, filter, trackFilter, search) {
   let out = q;
-  if (filter === "reply") out = out.filter(i => i.kind === "reply");
-  else if (filter === "outreach") out = out.filter(i => i.kind === "outreach");
+  if (filter !== "all") out = out.filter(i => i.kind === filter);
+  if (trackFilter) out = out.filter(i => matchesTrack(i, trackFilter));
   if (search) {
     out = out.filter(i => {
       const hay = [i.name, i.company, i.email, i.subject, i.track, i.why]
@@ -40,8 +69,44 @@ function ContextBlock({ item }) {
       </details>
     );
   }
+  if (item.kind === "bounce") {
+    const oldEmail = m.old_email || "";
+    const newEmail = m.corrected_email || item.email || "";
+    if (!oldEmail && !newEmail) return null;
+    return (
+      <details className="context" open>
+        <summary>Bounce fix</summary>
+        <div className="ctx-body">
+          <strong>Email</strong> · {oldEmail || "?"} → {newEmail || "?"}
+        </div>
+      </details>
+    );
+  }
   if (item.kind === "outreach") {
     const parts = [];
+    if (m.role) parts.push(<span key="role"><strong>Role</strong> · {m.role}</span>);
+    if (m.linkedin) {
+      parts.push(
+        <span key="li">
+          <strong>LinkedIn</strong> ·{" "}
+          <a href={m.linkedin} target="_blank" rel="noopener">{m.linkedin}</a>
+        </span>
+      );
+    }
+    if (m.attachments && m.attachments.length) {
+      parts.push(
+        <span key="att">
+          <strong>Attachments</strong> · {m.attachments.join(", ")}
+        </span>
+      );
+    }
+    if (m.is_uiuc_alum != null) {
+      parts.push(
+        <span key="alum">
+          <strong>Alum</strong> · {m.is_uiuc_alum ? "UIUC alum" : "Not UIUC alum"}
+        </span>
+      );
+    }
     if (m.company_signal) parts.push(<span key="sig"><strong>Signal</strong> · {m.company_signal}</span>);
     if (m.hooks) parts.push(<span key="hooks"><strong>Hooks</strong><br />{String(m.hooks).replace(/\n/g, " · ")}</span>);
     if (m.email_basis) parts.push(<span key="basis"><strong>Email basis</strong> · {m.email_basis}</span>);
@@ -97,7 +162,7 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
       return;
     }
     const link = res.data.draft_link || "https://mail.google.com/mail/u/0/#drafts";
-    onApproved(item.id, link);
+    onApproved(item.id, link, res.data);
     await Promise.all([refreshQueue(), refreshHistory()]);
   }
 
@@ -126,6 +191,7 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
   }
 
   const initialBody = sanitizeHtml(item.body_html);
+  const kindLabel = KIND_LABELS[item.kind] || item.kind;
 
   return (
     <li
@@ -137,9 +203,10 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
       }}
     >
       <div className="q-meta">
-        <span className="stream" style={{ margin: 0 }}>{item.track}</span>
+        {kindLabel && <span className={`kind-badge kind-${item.kind || "other"}`}>{kindLabel}</span>}
+        {item.track && <span className="stream" style={{ margin: 0 }}>{item.track}</span>}
         <strong>{item.name}</strong>
-        <span className="sub">{item.company}{item.kind ? " · " + item.kind : ""}</span>
+        <span className="sub">{item.company}</span>
       </div>
       {item.why && <p className="q-why">{item.why}</p>}
       <ContextBlock item={item} />
@@ -216,20 +283,26 @@ export default function Approvals({
   refreshQueue, refreshHistory, setRunMode,
 }) {
   const [filter, setFilter] = useState("all");
+  const [trackFilter, setTrackFilter] = useState("");
   const [search, setSearch] = useState("");
   const [focusIdx, setFocusIdx] = useState(0);
 
   const sorted = sortQueue(queue);
-  const filtered = filterQueue(sorted, filter, search);
+  const filtered = filterQueue(sorted, filter, trackFilter, search);
 
   const nReply = sorted.filter(i => i.kind === "reply").length;
+  const nBounce = sorted.filter(i => i.kind === "bounce").length;
+  const nFollowup = sorted.filter(i => i.kind === "followup").length;
   const nOut = sorted.filter(i => i.kind === "outreach").length;
+  const hasOutreach = nOut > 0;
   const splitLabel = sorted.length
-    ? [(nReply ? nReply + " repl" + (nReply === 1 ? "y" : "ies") : ""),
-       (nOut ? nOut + " outreach" : "")].filter(Boolean).join(" · ")
+    ? [
+        (nReply ? nReply + " repl" + (nReply === 1 ? "y" : "ies") : ""),
+        (nBounce ? nBounce + " bounce" : ""),
+        (nFollowup ? nFollowup + " follow-up" : ""),
+        (nOut ? nOut + " outreach" : ""),
+      ].filter(Boolean).join(" · ")
     : "";
-
-  const focusedId = filtered[focusIdx]?.id || null;
 
   function setFocus(i) {
     const idx = Math.max(0, Math.min(i, filtered.length - 1));
@@ -238,10 +311,15 @@ export default function Approvals({
     if (items[idx]) items[idx].scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
 
-  function onApproved(id, link) {
-    const t = addToast(
+  function onApproved(id, link, data = {}) {
+    const bits = ["Draft created."];
+    if (data.warn) bits.push(String(data.warn));
+    if (data.attached && data.attached.length) {
+      bits.push("Attached: " + data.attached.join(", "));
+    }
+    addToast(
       <span>
-        Draft created.{" "}
+        {bits.join(" ")}{" "}
         <a href={link} target="_blank" rel="noopener">Open in Gmail</a>
         {" · "}
         <button className="linkish" onClick={() => handleUndo(id)}>Undo</button>
@@ -312,7 +390,7 @@ export default function Approvals({
     }
   }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const searching = search || filter !== "all";
+  const searching = search || filter !== "all" || trackFilter;
 
   return (
     <>
@@ -332,16 +410,30 @@ export default function Approvals({
       )}
 
       <div className="filters" id="qfilters">
-        {["all", "reply", "outreach"].map(f => (
+        {FILTERS.map(f => (
           <button
-            key={f}
+            key={f.id}
             type="button"
-            className={`chip${filter === f ? " active" : ""}`}
-            onClick={() => { setFilter(f); }}
+            className={`chip${filter === f.id ? " active" : ""}`}
+            onClick={() => { setFilter(f.id); }}
           >
-            {f.charAt(0).toUpperCase() + f.slice(1)}
+            {f.label}
           </button>
         ))}
+        {hasOutreach && (
+          <span className="track-filters" aria-label="Track filters">
+            {TRACK_CHIPS.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                className={`chip track-chip${trackFilter === t.id ? " active" : ""}`}
+                onClick={() => setTrackFilter(trackFilter === t.id ? "" : t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </span>
+        )}
         <input
           className="qsearch"
           id="qsearch"
