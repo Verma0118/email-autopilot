@@ -57,8 +57,9 @@ def _filter_report(raw):
     data["needs_n"] = len(visible)
     return json.dumps(data)
 
+
 def _brief_html(record, filename):
-    """Readable prospect brief page (not raw JSON)."""
+    """Clean, scannable prospect brief — only what you need to decide."""
     import html as html_mod
     e = html_mod.escape
     cand = record.get("candidate") or {}
@@ -68,200 +69,129 @@ def _brief_html(record, filename):
     if not isinstance(hooks, list):
         hooks = []
 
-    name = cand.get("name") or filename
-    company = cand.get("company") or ""
-    role = cand.get("role") or ""
+    name = str(cand.get("name") or "Prospect")
+    company = str(cand.get("company") or "")
+    role = str(cand.get("role") or "")
     linkedin = cand.get("linkedin_url") or ""
-    track = record.get("track") or record.get("suggested_email_type") or ""
-    email_type = record.get("email_type") or track
-    date_s = record.get("date") or ""
+    why = str(cand.get("why_icp") or "").strip()
+    signal = str(brief.get("company_signal") or "").strip()
+    addr = str((email.get("address") or "")).strip()
     organized = bool(record.get("organized"))
-    why = cand.get("why_icp") or ""
-    signal = brief.get("company_signal") or ""
-    role_src = brief.get("role_source") or ""
-    role_ok = brief.get("role_confirmed")
-    addr = email.get("address") or ""
-    basis = email.get("basis") or ""
-    evidence = email.get("evidence_urls") or []
-    if not isinstance(evidence, list):
-        evidence = []
 
-    def link(url, label=None):
-        if not url:
-            return ""
-        u = e(str(url))
-        lab = e(label or url)
-        return f'<a href="{u}" target="_blank" rel="noopener">{lab}</a>'
-
-    hook_rows = []
-    for h in hooks:
+    hook_items = []
+    for h in hooks[:5]:
         if isinstance(h, dict):
-            fact = e(str(h.get("fact") or ""))
+            fact = str(h.get("fact") or "").strip()
             url = h.get("url") or ""
-            src = f' <span class="src">{link(url, "source")}</span>' if url else ""
-            hook_rows.append(f"<li><p>{fact}</p>{src}</li>")
-        elif h:
-            hook_rows.append(f"<li><p>{e(str(h))}</p></li>")
-    hooks_html = ("<ul class='hooks'>" + "".join(hook_rows) + "</ul>") if hook_rows else "<p class='muted'>No hooks yet.</p>"
+            if not fact:
+                continue
+            src = (f' <a class="src" href="{e(str(url))}" target="_blank" rel="noopener">source</a>'
+                   if url else "")
+            hook_items.append(f"<li>{e(fact)}{src}</li>")
+        else:
+            s = str(h).strip()
+            if s:
+                hook_items.append(f"<li>{e(s)}</li>")
+    hooks_html = ("<ol class='hooks'>" + "".join(hook_items) + "</ol>") if hook_items else ""
 
-    ev_html = ""
-    if evidence:
-        ev_html = "<ul class='ev'>" + "".join(f"<li>{link(u)}</li>" for u in evidence) + "</ul>"
+    subtitle = " · ".join(x for x in (role, company) if x)
+    status = "Ready for organize" if not organized else "Already organized"
 
-    status_pill = "Organized" if organized else "Awaiting organize"
-    status_cls = "ok" if organized else "wait"
-    role_pill = "Role confirmed" if role_ok else "Role unconfirmed"
-    role_cls = "ok" if role_ok else "warn"
+    def section(title, body_html):
+        if not body_html:
+            return ""
+        return f"<section><h2>{e(title)}</h2>{body_html}</section>"
 
-    title = e(f"{name}" + (f" · {company}" if company else ""))
+    why_html = f"<p>{e(why)}</p>" if why else ""
+    signal_html = f"<p>{e(signal)}</p>" if signal else ""
+
+    actions = ['<a class="btn ghost" href="/#overview">← Panel</a>']
+    if linkedin:
+        actions.append(f'<a class="btn" href="{e(str(linkedin))}" target="_blank" rel="noopener">LinkedIn</a>')
+    if addr:
+        actions.append(f'<a class="btn primary" href="mailto:{e(addr)}">Email {e(addr)}</a>')
+
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — Brief</title>
+<title>{e(name)} — Brief</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <style>
 html {{ color-scheme: light; }}
 :root {{
-  --bg0:#f7faf8; --bg1:#e9f3ee; --paper:#fff;
-  --ink:#15241e; --ink2:#5c6f66; --ink3:#8a9a92;
-  --line:rgba(21,36,30,.09); --accent:#0c6b54; --accent-soft:rgba(12,107,84,.10);
-  --good:#0e6f42; --good-soft:rgba(14,111,66,.10);
-  --warn:#8a5a00; --warn-soft:rgba(138,90,0,.10);
+  --bg:#f4f8f6; --paper:#fff; --ink:#15241e; --muted:#5c6f66; --faint:#8a9a92;
+  --line:rgba(21,36,30,.09); --accent:#0c6b54;
   --font:"Plus Jakarta Sans", system-ui, sans-serif;
   --display:"Fraunces", Georgia, serif;
-  --radius:14px; --shadow:0 1px 2px rgba(21,36,30,.04), 0 8px 24px rgba(21,36,30,.05);
 }}
 * {{ box-sizing:border-box; margin:0; }}
 body {{
-  min-height:100vh; color:var(--ink); font:15px/1.55 var(--font); font-weight:450;
-  letter-spacing:-.01em; -webkit-font-smoothing:antialiased;
-  background:
-    radial-gradient(900px 420px at 0% -5%, rgba(12,107,84,.11), transparent 55%),
-    linear-gradient(180deg, var(--bg0), var(--bg1));
+  min-height:100vh; color:var(--ink); font:16px/1.55 var(--font); font-weight:450;
+  letter-spacing:-.011em; -webkit-font-smoothing:antialiased;
+  background:radial-gradient(800px 380px at 10% -10%, rgba(12,107,84,.10), transparent 55%), var(--bg);
 }}
-.top {{
-  position:sticky; top:0; z-index:5; backdrop-filter:blur(14px);
-  background:rgba(255,255,255,.82); border-bottom:1px solid var(--line);
+.wrap {{ max-width:640px; margin:0 auto; padding:28px 22px 64px; }}
+.bar {{ display:flex; align-items:center; gap:12px; margin-bottom:28px; }}
+.bar a {{ color:var(--accent); font-weight:600; font-size:.9rem; text-decoration:none; }}
+.bar a:hover {{ text-decoration:underline; text-underline-offset:3px; }}
+.bar .status {{ margin-left:auto; font-size:.78rem; font-weight:650; color:var(--accent);
+  background:rgba(12,107,84,.1); padding:4px 10px; border-radius:999px; }}
+header h1 {{
+  font-family:var(--display); font-size:2.1rem; font-weight:550;
+  letter-spacing:-.035em; line-height:1.12; margin-bottom:8px;
 }}
-.top-inner {{
-  max-width:720px; margin:0 auto; padding:12px 24px;
-  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+header .sub {{ color:var(--muted); font-size:1.05rem; margin-bottom:18px; }}
+.contact {{
+  display:flex; flex-wrap:wrap; gap:10px; margin-bottom:28px;
 }}
-.back {{
-  font-weight:600; color:var(--accent); text-decoration:none; font-size:.9rem;
-}}
-.back:hover {{ text-decoration:underline; text-underline-offset:3px; }}
-.top .file {{ color:var(--ink3); font-size:.78rem; margin-left:auto; max-width:40ch;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-main {{ max-width:720px; margin:0 auto; padding:28px 24px 72px; }}
-.hero {{ margin-bottom:22px; }}
-.pills {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }}
-.pill {{
-  font-size:.72rem; font-weight:700; padding:4px 10px; border-radius:999px;
-  background:var(--accent-soft); color:var(--accent);
-}}
-.pill.ok {{ background:var(--good-soft); color:var(--good); }}
-.pill.wait {{ background:var(--accent-soft); color:var(--accent); }}
-.pill.warn {{ background:var(--warn-soft); color:var(--warn); }}
-.pill.mute {{ background:rgba(21,36,30,.05); color:var(--ink2); }}
-h1 {{
-  font-family:var(--display); font-size:2rem; font-weight:550;
-  letter-spacing:-.03em; line-height:1.15; margin-bottom:6px;
-}}
-.role {{ color:var(--ink2); font-size:1.02rem; margin-bottom:4px; }}
-.company {{ color:var(--ink3); font-size:.92rem; }}
-.grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:20px 0; }}
-@media (max-width:640px) {{ .grid {{ grid-template-columns:1fr; }} .top-inner, main {{ padding-left:16px; padding-right:16px; }} }}
-.card {{
-  background:var(--paper); border:1px solid var(--line); border-radius:var(--radius);
-  padding:18px 20px; box-shadow:var(--shadow);
-}}
-.card.wide {{ grid-column:1 / -1; }}
-.card h2 {{
-  font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
-  color:var(--ink3); margin-bottom:10px;
-}}
-.card p, .card li {{ color:var(--ink); font-size:.95rem; line-height:1.6; }}
-.card .muted, .src {{ color:var(--ink2); font-size:.84rem; }}
-.card a {{ color:var(--accent); font-weight:600; text-decoration:none; }}
-.card a:hover {{ text-decoration:underline; text-underline-offset:3px; }}
-.kv {{ display:grid; gap:10px; }}
-.kv div {{ display:flex; flex-direction:column; gap:2px; }}
-.kv dt {{ font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink3); }}
-.kv dd {{ font-size:.95rem; font-weight:550; word-break:break-word; }}
-.hooks {{ list-style:none; display:flex; flex-direction:column; gap:12px; }}
-.hooks li {{ padding-bottom:12px; border-bottom:1px solid var(--line); }}
-.hooks li:last-child {{ border-bottom:0; padding-bottom:0; }}
-.ev {{ list-style:none; display:flex; flex-direction:column; gap:6px; margin-top:8px; }}
-.actions {{ display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; }}
 .btn {{
-  display:inline-flex; align-items:center; justify-content:center;
-  min-height:40px; padding:0 16px; border-radius:10px; font:inherit; font-weight:600;
-  text-decoration:none; border:0; cursor:pointer;
+  display:inline-flex; align-items:center; min-height:40px; padding:0 14px;
+  border-radius:10px; font:inherit; font-weight:600; font-size:.9rem;
+  text-decoration:none; border:1px solid var(--line); background:var(--paper); color:var(--ink);
 }}
-.btn-primary {{ background:var(--accent); color:#fff; }}
-.btn-quiet {{ background:var(--paper); color:var(--ink2); border:1px solid var(--line); }}
-.raw {{ margin-top:28px; color:var(--ink3); font-size:.8rem; }}
-.raw a {{ color:var(--ink2); }}
+.btn.primary {{ background:var(--accent); color:#fff; border-color:transparent; }}
+.btn.ghost {{ background:transparent; color:var(--accent); border-color:transparent; padding-left:0; }}
+.sheet {{
+  background:var(--paper); border:1px solid var(--line); border-radius:16px;
+  padding:8px 22px 22px; 
+}}
+section {{ padding:18px 0; border-top:1px solid var(--line); }}
+section:first-child {{ border-top:0; }}
+section h2 {{
+  font-size:.72rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--faint); margin-bottom:8px;
+}}
+section p {{ color:var(--ink); font-size:.98rem; line-height:1.6; max-width:58ch; }}
+.hooks {{ padding-left:1.2rem; display:flex; flex-direction:column; gap:10px; }}
+.hooks li {{ color:var(--ink); font-size:.95rem; line-height:1.5; padding-left:4px; }}
+.hooks .src {{ color:var(--accent); font-size:.8rem; font-weight:650; margin-left:6px; text-decoration:none; }}
+.hooks .src:hover {{ text-decoration:underline; }}
+.empty {{ color:var(--muted); font-size:.95rem; padding:18px 0; }}
+.foot {{ margin-top:18px; font-size:.78rem; color:var(--faint); }}
+.foot a {{ color:var(--faint); }}
 </style></head>
 <body>
-<header class="top"><div class="top-inner">
-  <a class="back" href="/#overview">← Back to panel</a>
-  <span class="file" title="{e(filename)}">{e(filename)}</span>
-</div></header>
-<main>
-  <div class="hero">
-    <div class="pills">
-      <span class="pill {status_cls}">{e(status_pill)}</span>
-      <span class="pill {role_cls}">{e(role_pill)}</span>
-      {f'<span class="pill mute">{e(str(track))}</span>' if track else ''}
-      {f'<span class="pill mute">{e(str(date_s))}</span>' if date_s else ''}
-    </div>
-    <h1>{e(str(name))}</h1>
-    {f'<p class="role">{e(str(role))}</p>' if role else ''}
-    {f'<p class="company">{e(str(company))}</p>' if company else ''}
+<div class="wrap">
+  <div class="bar">
+    <a href="/#overview">← Back</a>
+    <span class="status">{e(status)}</span>
   </div>
-
-  <div class="grid">
-    <div class="card">
-      <h2>Contact</h2>
-      <dl class="kv">
-        <div><dt>Email</dt><dd>{(link('mailto:'+addr, addr) if addr else '<span class="muted">—</span>')}</dd></div>
-        <div><dt>Basis</dt><dd>{e(str(basis)) if basis else '—'}</dd></div>
-        <div><dt>Email type</dt><dd>{e(str(email_type)) if email_type else '—'}</dd></div>
-        <div><dt>LinkedIn</dt><dd>{link(linkedin, 'Profile') if linkedin else '—'}</dd></div>
-      </dl>
-      {ev_html}
-    </div>
-    <div class="card">
-      <h2>Role check</h2>
-      <p>{e(str(role_src)) if role_src else '<span class="muted">No role source noted.</span>'}</p>
-    </div>
-    <div class="card wide">
-      <h2>Why ICP</h2>
-      <p>{e(str(why)) if why else '<span class="muted">—</span>'}</p>
-    </div>
-    <div class="card wide">
-      <h2>Company signal</h2>
-      <p>{e(str(signal)) if signal else '<span class="muted">—</span>'}</p>
-    </div>
-    <div class="card wide">
-      <h2>Hooks</h2>
-      {hooks_html}
-    </div>
+  <header>
+    <h1>{e(name)}</h1>
+    {f'<p class="sub">{e(subtitle)}</p>' if subtitle else ''}
+  </header>
+  <div class="contact">{"".join(actions)}</div>
+  <div class="sheet">
+    {section("Why them", why_html)}
+    {section("Company signal", signal_html)}
+    {section("Talk about", hooks_html)}
+    {"" if (why_html or signal_html or hooks_html) else '<p class="empty">No research notes in this brief yet.</p>'}
   </div>
-
-  <div class="actions">
-    <a class="btn btn-primary" href="/#overview">Back to Overview</a>
-    {f'<a class="btn btn-quiet" href="{e(linkedin)}" target="_blank" rel="noopener">LinkedIn</a>' if linkedin else ''}
-    {f'<a class="btn btn-quiet" href="mailto:{e(addr)}">Email</a>' if addr else ''}
-  </div>
-  <p class="raw"><a href="/brief/{e(filename)}?raw=1">View raw JSON</a></p>
-</main>
+  <p class="foot"><a href="/brief/{e(filename)}?raw=1">Raw data</a></p>
+</div>
 </body></html>"""
-
 
 
 PAGE = """<!doctype html>
@@ -771,6 +701,36 @@ footer.links {
   font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
   color:var(--ink3); margin-right:2px;
 }
+
+.status-strip {
+  display:grid; grid-template-columns:1.1fr .9fr; gap:10px;
+}
+@media (max-width:640px) { .status-strip { grid-template-columns:1fr; } }
+.block.compact { padding:14px 16px; }
+.block.compact .big { font-size:1.15rem; }
+.stack { gap:10px !important; }
+.stack-lg { gap:14px !important; }
+.section-head { margin-bottom:14px !important; }
+.section-lede { display:none; }
+.jumpnav { display:none !important; }
+.errors-box {
+  background:#fff !important;
+  border:1px solid color-mix(in srgb, var(--bad) 22%, var(--line)) !important;
+  padding:16px 18px !important;
+}
+.errors-box h3 { margin-bottom:6px !important; font-size:1.05rem !important; }
+.err-lede { color:var(--ink2); font-size:.88rem; margin-bottom:10px; line-height:1.45; }
+.errors-box li {
+  background:rgba(180,35,24,.04) !important;
+  border:0 !important; border-radius:8px !important;
+  padding:8px 10px !important; font-size:.84rem !important;
+}
+.needs, .gmail-drafts { padding:14px 16px !important; margin:0 !important; }
+.needs h3, .gmail-drafts h3 { font-size:1.05rem !important; margin-bottom:10px !important; }
+.person-row { padding:12px 14px !important; }
+main { padding-top:20px !important; }
+.chrome-inner { gap:10px !important; padding-top:12px !important; }
+.section-head h2 { font-size:1.4rem !important; }
 </style></head>
 <body>
 <div class="chrome">
@@ -832,62 +792,53 @@ footer.links {
   </section>
 
   <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" hidden>
-    <div class="section-head"><h2>Overview</h2></div>
-    <p class="section-lede">Start here: people and errors that need a decision, then run status below.</p>
-    <ul class="jumpnav" id="jumpnav" hidden>
-      <li><a href="#zone-attention">Attention</a></li>
-      <li id="jump-briefs" hidden><a href="#briefsbox">Briefs</a></li>
-      <li id="jump-errors" hidden><a href="#errorsbox">Errors</a></li>
-      <li><a href="#zone-status">Status</a></li>
-    </ul>
-    <div class="stack-lg">
-      <div class="stack" id="zone-attention">
-        <p class="zone-label">Needs attention</p>
-        <p class="lastrun" id="lastrun">Last run: <strong id="lastrun-text">—</strong></p>
-        <div class="needs" id="needsbox" hidden>
-          <h3>Needs you <span class="badge" id="needsbadge" data-n="0">0</span></h3>
-          <ul id="needslist"></ul>
-          <a class="go" href="#report" id="needs-report">Open full report →</a>
-        </div>
-        <div class="gmail-drafts" id="gmailbox" hidden>
-          <h3>Review in Gmail <span class="badge" id="gmailbadge" data-n="0">0</span></h3>
-          <ul id="gmaillist"></ul>
-        </div>
-        <div class="gmail-drafts" id="briefsbox" hidden>
-          <h3>Briefs awaiting organize <span class="badge" id="briefsbadge" data-n="0">0</span></h3>
-          <ul id="briefslist"></ul>
-          <button type="button" class="btn btn-primary btn-sm" id="briefs-organize" style="margin-top:12px">Run Organize →</button>
-        </div>
-        <div class="needs" id="actionsbox" hidden>
-          <h3>Inbox action items</h3>
-          <ul id="actionslist"></ul>
-        </div>
-        <div class="errors-box" id="errorsbox" hidden>
-          <h3>Errors last run</h3>
-          <ul id="errorslist"></ul>
-        </div>
+    <div class="section-head">
+      <h2>Overview</h2>
+      <p class="hint" id="lastrun">Last run · <strong id="lastrun-text">—</strong></p>
+    </div>
+
+    <div class="status-strip">
+      <div class="block compact">
+        <p class="label">Activity</p>
+        <p class="big" id="stage">idle</p>
+        <p class="sub" id="detail">—</p>
+        <span class="stream" id="stream" hidden></span>
       </div>
-      <div class="stack" id="zone-status">
-        <p class="zone-label">Status</p>
-        <div class="grid">
-          <div class="block">
-            <p class="label">Current activity</p>
-            <p class="big" id="stage">idle</p>
-            <p class="sub" id="detail">—</p>
-            <span class="stream" id="stream" hidden></span>
-          </div>
-          <div class="block tok" id="tokcard">
-            <p class="label">LLM spend (5h window)</p>
-            <p class="big" id="tokpct">0%</p>
-            <p class="sub" id="tokdetail">—</p>
-            <meter id="tokmeter" min="0" max="100" low="59" high="60" optimum="10" value="0"></meter>
-            <p class="sub" style="margin-top:10px">Autopilot budget only. Full Claude usage: Settings → Usage.</p>
-          </div>
-        </div>
-        <div class="block">
-          <p class="label">Inbox rundown</p>
-          <p class="rundown" id="rundown">—</p>
-        </div>
+      <div class="block compact tok" id="tokcard">
+        <p class="label">Claude usage</p>
+        <p class="big" id="tokpct">0%</p>
+        <p class="sub" id="tokdetail">—</p>
+        <meter id="tokmeter" min="0" max="100" low="59" high="60" optimum="10" value="0"></meter>
+      </div>
+    </div>
+
+    <div class="stack" id="zone-attention" style="margin-top:18px">
+      <div class="needs" id="needsbox" hidden>
+        <h3>Needs you <span class="badge" id="needsbadge" data-n="0">0</span></h3>
+        <ul id="needslist"></ul>
+        <a class="go" href="#report" id="needs-report">Full report →</a>
+      </div>
+      <div class="gmail-drafts" id="gmailbox" hidden>
+        <h3>Review in Gmail <span class="badge" id="gmailbadge" data-n="0">0</span></h3>
+        <ul id="gmaillist"></ul>
+      </div>
+      <div class="gmail-drafts" id="briefsbox" hidden>
+        <h3>Briefs to organize <span class="badge" id="briefsbadge" data-n="0">0</span></h3>
+        <ul id="briefslist"></ul>
+        <button type="button" class="btn btn-primary btn-sm" id="briefs-organize" style="margin-top:12px">Run Organize →</button>
+      </div>
+      <div class="needs" id="actionsbox" hidden>
+        <h3>Inbox action items</h3>
+        <ul id="actionslist"></ul>
+      </div>
+      <div class="errors-box" id="errorsbox" hidden>
+        <h3>What blocked the last run</h3>
+        <p class="err-lede" id="errors-lede"></p>
+        <ul id="errorslist"></ul>
+      </div>
+      <div class="block compact" id="rundown-block">
+        <p class="label">Inbox rundown</p>
+        <p class="rundown" id="rundown">—</p>
       </div>
     </div>
   </section>
@@ -1311,12 +1262,42 @@ async function loadReport() {
     }
     const ebox = el("errorsbox");
     const errs = r.errors || [];
-    if (errs.length) {
-      ebox.hidden = false;
-      el("errorslist").innerHTML = errs.slice(0, 8).map(e => "<li>" + esc(e) + "</li>").join("");
+    const je = el("jump-errors"); if (je) je.hidden = !errs.length;
+    if (!errs.length) {
+      ebox.hidden = true; el("errorslist").innerHTML = "";
+      const lede0 = el("errors-lede"); if (lede0) lede0.textContent = "";
     } else {
-      ebox.hidden = true;
-      el("errorslist").innerHTML = "";
+      ebox.hidden = false;
+      const marked = [];
+      const limits = [];
+      const other = [];
+      errs.forEach(e => {
+        const s = String(e || "");
+        const m = s.match(/^([^:]+):\\s*LLM marked down/i);
+        if (m) marked.push(m[1].trim());
+        else if (/rate\\/session limit|session limit/i.test(s)) limits.push(s);
+        else other.push(s);
+      });
+      let lede = "";
+      if (limits.length || marked.length) {
+        lede = "Claude hit a session limit, so research/draft steps were skipped.";
+        if (marked.length) lede += " Skipped: " + marked.slice(0, 6).join(", ")
+          + (marked.length > 6 ? " +" + (marked.length - 6) + " more" : "") + ".";
+        lede += " Usage usually resets on the time shown in Claude Usage — then Run again.";
+      } else {
+        lede = "These failed during the last run. Fix or retry as needed.";
+      }
+      const ledeEl = el("errors-lede"); if (ledeEl) ledeEl.textContent = lede;
+      const rows = [];
+      limits.slice(0, 2).forEach(s => {
+        const short = s.replace(/^[^:]+:\\s*/, "").replace(/rate\\/session limit, skipping all LLM stages this run:\\s*/i, "");
+        rows.push("<li><strong>Session limit</strong> — " + esc(short.slice(0, 180)) + (short.length > 180 ? "…" : "") + "</li>");
+      });
+      other.slice(0, 5).forEach(s => rows.push("<li>" + esc(s) + "</li>"));
+      if (!rows.length && marked.length) {
+        rows.push("<li>No individual stage errors beyond the session limit above.</li>");
+      }
+      el("errorslist").innerHTML = rows.join("");
     }
   } catch (_) {}
 }
@@ -1371,7 +1352,7 @@ async function poll() {
       : (t.used || 0).toLocaleString() + " / " + (t.budget || 0).toLocaleString()
         + " tokens · " + (t.calls || 0) + " calls since " + (t.window_started || "—");
     el("tokmeter").value = Math.min(100, t.pct || 0);
-    el("tokcard").className = "block tok" + (t.pct >= 100 ? " bad" : (t.pct >= 60 ? " warn" : ""));
+    el("tokcard").className = "block compact tok" + (t.limit_hit || t.pct >= 100 ? " bad" : (t.pct >= 60 ? " warn" : ""));
     const feed = el("feed");
     feed.innerHTML = "";
     (s.events || []).slice().reverse().slice(0, 40).forEach(e => {
