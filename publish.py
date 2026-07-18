@@ -24,33 +24,33 @@ SHELL_TEMPLATE = """<!doctype html>
 <title>EmailCRM Autopilot</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@450;550;650;700&family=Fraunces:opsz,wght@9..144,550;9..144,650&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <style>
 html { color-scheme: light; }
 :root {
-  --bg0:#f8fbfa; --bg1:#eef6f2;
-  --surface:rgba(255,255,255,.82); --surface-solid:#ffffff;
-  --ink:#132019; --ink2:#5a6b64; --ink3:#879890;
-  --line:rgba(18,40,32,.1); --accent:#0d7a5f; --accent-ink:#fff;
-  --bad:#b42318; --ease:cubic-bezier(0.23,1,0.32,1);
-  --font:"Figtree", "Segoe UI", sans-serif;
+  --bg0:#f7faf8; --bg1:#e9f3ee;
+  --paper:#ffffff; --surface:rgba(255,255,255,.82); --surface-solid:#ffffff;
+  --ink:#15241e; --ink2:#5c6f66; --ink3:#8a9a92;
+  --line:rgba(21,36,30,.1); --accent:#0c6b54; --accent-ink:#fff;
+  --bad:#b42318; --ease:cubic-bezier(0.22,1,0.36,1);
+  --font:"Plus Jakarta Sans", "Segoe UI", sans-serif;
   --display:"Fraunces", Georgia, serif;
-  --frost:blur(18px) saturate(1.4);
-  --shadow:0 1px 2px rgba(18,40,32,.04), 0 16px 40px rgba(18,40,32,.08);
+  --frost:blur(16px) saturate(1.25);
+  --shadow:0 1px 2px rgba(21,36,30,.04), 0 16px 40px rgba(21,36,30,.08);
 }
 * { box-sizing:border-box; margin:0; }
 body {
   min-height:100vh; display:grid; place-items:center; padding:24px;
-  color:var(--ink); font:15px/1.5 var(--font); font-weight:450;
-  -webkit-font-smoothing:antialiased;
+  color:var(--ink); font:15px/1.55 var(--font); font-weight:450;
+  letter-spacing:-.01em; -webkit-font-smoothing:antialiased;
   background:
-    radial-gradient(900px 420px at 20% 0%, rgba(13,122,95,.12), transparent 55%),
-    radial-gradient(700px 360px at 100% 100%, rgba(62,207,154,.08), transparent 50%),
+    radial-gradient(900px 420px at 20% 0%, rgba(12,107,84,.12), transparent 55%),
+    radial-gradient(700px 360px at 100% 100%, rgba(12,107,84,.06), transparent 50%),
     linear-gradient(165deg, var(--bg0), var(--bg1));
 }
 form {
-  background:var(--surface); border:1px solid var(--line); border-radius:20px;
-  padding:28px 26px; width:100%; max-width:380px;
+  background:var(--surface); border:1px solid var(--line); border-radius:18px;
+  padding:30px 28px; width:100%; max-width:380px;
   display:flex; flex-direction:column; gap:12px;
   backdrop-filter:var(--frost); -webkit-backdrop-filter:var(--frost);
   box-shadow:var(--shadow);
@@ -64,26 +64,27 @@ form {
   form { animation:none; }
 }
 .mark {
-  font-family:var(--display); font-size:.78rem; font-weight:550;
-  letter-spacing:.04em; text-transform:uppercase; color:var(--accent);
+  font-family:var(--display); font-size:1.05rem; font-weight:550;
+  letter-spacing:-.02em; text-transform:none; color:var(--ink);
 }
 h1 {
-  font-family:var(--display); font-size:1.45rem; font-weight:550;
-  letter-spacing:-.025em; line-height:1.15;
+  font-family:var(--display); font-size:1.55rem; font-weight:550;
+  letter-spacing:-.03em; line-height:1.15;
 }
-p { color:var(--ink2); font-size:.88rem; }
-label { font-size:.78rem; font-weight:650; color:var(--ink3); }
+p { color:var(--ink2); font-size:.9rem; }
+label { font-size:.75rem; font-weight:700; color:var(--ink3); letter-spacing:.04em; text-transform:uppercase; }
 input {
   font:inherit; color:var(--ink); background:var(--surface-solid);
-  border:1px solid var(--line); border-radius:11px; padding:11px 13px; width:100%;
+  border:1px solid var(--line); border-radius:10px; padding:12px 13px; width:100%;
 }
 input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 button {
-  font:inherit; font-weight:650; color:var(--accent-ink); background:var(--accent);
-  border:0; border-radius:10px; padding:11px; cursor:pointer; margin-top:4px;
-  transition:transform 160ms var(--ease), opacity .2s;
+  font:inherit; font-weight:600; color:var(--accent-ink); background:var(--accent);
+  border:0; border-radius:10px; padding:12px; cursor:pointer; margin-top:4px;
+  transition:transform 140ms var(--ease), opacity .2s, background .18s;
 }
-button:active { transform:scale(0.97); }
+button:hover { background:#0a5c48; }
+button:active { transform:scale(0.98); }
 button:disabled { opacity:.6; }
 button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .err { color:var(--bad); font-size:.84rem; display:none; }
