@@ -247,7 +247,7 @@ export default function App() {
         onStop={onStop}
         onShowActivity={() => showTab("activity")}
       />
-      <main>
+      <main className={status.running ? "is-live" : ""}>
         <div className={`panel${tab === "approvals" ? " active" : ""}`} id="panel-approvals" role="tabpanel">
           <Approvals
             queue={queue}

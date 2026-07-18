@@ -1,4 +1,3 @@
-import { useState, useRef, useEffect } from "react";
 import { postRun, postStop, postUpdate } from "../api.js";
 import { prettyStage } from "../pipeline.js";
 
@@ -54,40 +53,37 @@ export default function Chrome({
   }
 
   return (
-    <div className="chrome">
+    <div className={`chrome${running ? " is-live" : ""}`}>
       <div className="chrome-inner">
         <div className="toprow">
           <div className="brand">
             <span className={`dot${running ? " live" : ""}`} aria-hidden="true" />
             <h1>EmailCRM</h1>
-            {!running && <span className="stagechip">Ready</span>}
-            {running && (
-              <span className="stagechip live" title={status.detail || ""}>
-                {prettyStage(status.stage)}
-              </span>
-            )}
+            <span
+              className={`stagechip${running ? " live" : ""}`}
+              title={running ? (status.detail || "") : "Ready"}
+            >
+              {running ? prettyStage(status.stage) : "Ready"}
+            </span>
           </div>
           <div className="actions">
             {!running && (
               <>
-                <label className="mode-select-wrap">
-                  <span className="chrome-label">Mode</span>
-                  <select
-                    className="mode-select"
-                    value={runMode}
-                    onChange={(ev) => setRunMode(ev.target.value)}
-                    aria-label="Run mode"
-                  >
-                    {PRIMARY_MODES.map(m => (
-                      <option key={m.stage || "full"} value={m.stage}>{m.label}</option>
+                <select
+                  className="mode-select"
+                  value={runMode}
+                  onChange={(ev) => setRunMode(ev.target.value)}
+                  aria-label="Run mode"
+                >
+                  {PRIMARY_MODES.map(m => (
+                    <option key={m.stage || "full"} value={m.stage}>{m.label}</option>
+                  ))}
+                  <optgroup label="More">
+                    {MORE_MODES.map(m => (
+                      <option key={m.stage} value={m.stage}>{m.label}</option>
                     ))}
-                    <optgroup label="More">
-                      {MORE_MODES.map(m => (
-                        <option key={m.stage} value={m.stage}>{m.label}</option>
-                      ))}
-                    </optgroup>
-                  </select>
-                </label>
+                  </optgroup>
+                </select>
                 {costHint?.text && (
                   <span className="cost-hint" title={costHint.text}>
                     {costHint.short || costHint.text}
@@ -99,11 +95,11 @@ export default function Chrome({
                   className="btn btn-primary"
                   onClick={handleRun}
                 >
-                  Run {modeLabel(runMode)}
+                  Run
                 </button>
                 <button
                   type="button"
-                  className="btn btn-ghost"
+                  className="btn btn-ghost btn-sm"
                   title="git pull + reload panel"
                   onClick={handleUpdate}
                 >
@@ -112,11 +108,7 @@ export default function Chrome({
               </>
             )}
             {running && (
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={handleStop}
-              >
+              <button type="button" className="btn btn-danger btn-sm" onClick={handleStop}>
                 Stop
               </button>
             )}
@@ -138,7 +130,10 @@ export default function Chrome({
             >
               {t.label}
               {t.id === "activity" && running ? (
-                <span className="badge live-badge">live</span>
+                <span className="badge live-badge">
+                  <span className="live-dot" aria-hidden="true" />
+                  live
+                </span>
               ) : (
                 t.badge != null && (
                   <span className="badge" data-n={String(t.badge)}>
