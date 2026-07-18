@@ -37,6 +37,7 @@ def begin(mode):
         "running": True, "pid": os.getpid(), "mode": mode,
         "started": datetime.now().isoformat(timespec="seconds"),
         "stage": "preflight", "detail": "", "stream": None,
+        "rundown": "Updating…",
         "events": [], "tokens": tokens_snapshot(),
     })
     STOP_FLAG.unlink(missing_ok=True)
@@ -159,13 +160,16 @@ def _load_tokens():
 
 
 def add_usage(usage):
-    """usage: the 'usage' dict from a claude -p JSON envelope."""
+    """usage: the 'usage' dict from a claude -p JSON envelope.
+
+    Counts input+output only. Cache-write tokens are huge and made the meter
+    look like Claude session % — they are not billed the same way, so ignore.
+    """
     data = _load_tokens()
     # A successful call means the Anthropic session limit is no longer blocking us
     if data.get("limit_hit"):
         _clear_limit(data)
-    data["tokens"] += (usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
-                       + usage.get("cache_creation_input_tokens", 0))
+    data["tokens"] += (usage.get("input_tokens", 0) + usage.get("output_tokens", 0))
     data["calls"] += 1
     budget = config.SESSION_TOKEN_BUDGET
     pct = data["tokens"] / budget if budget else 0

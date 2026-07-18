@@ -885,10 +885,11 @@ main { padding-top:20px !important; }
         <span class="stream" id="stream" hidden></span>
       </div>
       <div class="block compact tok" id="tokcard">
-        <p class="label">Claude usage</p>
+        <p class="label">Autopilot LLM meter</p>
         <p class="big" id="tokpct">0%</p>
         <p class="sub" id="tokdetail">—</p>
         <meter id="tokmeter" min="0" max="100" low="59" high="60" optimum="10" value="0"></meter>
+        <p class="sub" style="margin-top:8px">Not your Claude session %. Just this app’s calls this window.</p>
       </div>
     </div>
 
@@ -912,7 +913,7 @@ main { padding-top:20px !important; }
         <ul id="actionslist"></ul>
       </div>
       <div class="errors-box" id="errorsbox" hidden>
-        <h3>What blocked the last run</h3>
+        <h3>Blocked</h3>
         <p class="err-lede" id="errors-lede"></p>
         <ul id="errorslist"></ul>
       </div>
@@ -1360,23 +1361,19 @@ async function loadReport() {
       });
       let lede = "";
       if (limits.length || marked.length) {
-        lede = "Claude hit a session limit, so research/draft steps were skipped.";
-        if (marked.length) lede += " Skipped: " + marked.slice(0, 6).join(", ")
-          + (marked.length > 6 ? " +" + (marked.length - 6) + " more" : "") + ".";
-        lede += " Usage usually resets on the time shown in Claude Usage — then Run again.";
+        lede = "Claude hit a session limit. Wait for reset, then hit Run again.";
+        if (marked.length) lede += " Skipped " + marked.length + " LLM step"
+          + (marked.length === 1 ? "" : "s") + ".";
       } else {
-        lede = "These failed during the last run. Fix or retry as needed.";
+        lede = "Something failed last run.";
       }
       const ledeEl = el("errors-lede"); if (ledeEl) ledeEl.textContent = lede;
       const rows = [];
-      limits.slice(0, 2).forEach(s => {
+      limits.slice(0, 1).forEach(s => {
         const short = s.replace(/^[^:]+:\\s*/, "").replace(/rate\\/session limit, skipping all LLM stages this run:\\s*/i, "");
-        rows.push("<li><strong>Session limit</strong> — " + esc(short.slice(0, 180)) + (short.length > 180 ? "…" : "") + "</li>");
+        rows.push("<li>" + esc(short.slice(0, 140)) + (short.length > 140 ? "…" : "") + "</li>");
       });
-      other.slice(0, 5).forEach(s => rows.push("<li>" + esc(s) + "</li>"));
-      if (!rows.length && marked.length) {
-        rows.push("<li>No individual stage errors beyond the session limit above.</li>");
-      }
+      other.slice(0, 4).forEach(s => rows.push("<li>" + esc(s) + "</li>"));
       el("errorslist").innerHTML = rows.join("");
     }
   } catch (_) {}
@@ -1424,13 +1421,17 @@ async function poll() {
     }
     const st = el("stream");
     if (s.stream) { st.textContent = s.stream; st.hidden = false; } else st.hidden = true;
-    if (s.rundown) el("rundown").textContent = s.rundown;
+    if (s.running && (s.rundown === "Updating…" || !s.rundown)) {
+      el("rundown").textContent = "Updating…";
+    } else {
+      el("rundown").textContent = s.rundown || "—";
+    }
     const t = s.tokens || {};
-    el("tokpct").textContent = t.limit_hit ? "LIMIT" : ((t.pct || 0) + "%");
+    el("tokpct").textContent = t.limit_hit ? "PAUSED" : ((t.pct || 0) + "%");
     el("tokdetail").textContent = t.limit_hit
-      ? "Anthropic session limit hit · resets " + (t.limit_reset || "soon")
+      ? "Claude session limit · try again after " + (t.limit_reset || "reset")
       : (t.used || 0).toLocaleString() + " / " + (t.budget || 0).toLocaleString()
-        + " tokens · " + (t.calls || 0) + " calls since " + (t.window_started || "—");
+        + " · " + (t.calls || 0) + " calls since " + (t.window_started || "—");
     el("tokmeter").value = Math.min(100, t.pct || 0);
     el("tokcard").className = "block compact tok" + (t.limit_hit || t.pct >= 100 ? " bad" : (t.pct >= 60 ? " warn" : ""));
     const feed = el("feed");
