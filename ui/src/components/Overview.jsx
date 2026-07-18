@@ -59,10 +59,14 @@ export default function Overview({
   const tokPct = tokens.pct || 0;
   const tokClass = tokens.limit_hit || tokPct >= 100 ? " bad" : (tokPct >= 60 ? " warn" : "");
   const tokDisplay = tokens.limit_hit ? "PAUSED" : (tokPct + "%");
+  const hardPct = tokens.hard_pct != null ? tokens.hard_pct : 60;
   const tokDetail = tokens.limit_hit
     ? "Claude session limit · try again after " + (tokens.limit_reset || "reset")
-    : [(tokens.used || 0).toLocaleString(), " / ", (tokens.budget || 0).toLocaleString(),
-       " · ", (tokens.calls || 0), " calls since ", tokens.window_started || "—"].join("");
+    : [
+        (tokens.used || 0).toLocaleString(), " / ", (tokens.budget || 0).toLocaleString(),
+        " · stops at ", hardPct, "%",
+        " · ", (tokens.calls || 0), " calls since ", tokens.window_started || "—",
+      ].join("");
 
   const stageLabel = status.running ? (status.stage || "running") : "idle";
   const lastRunText = status.running ? "running now…" : (status.detail || "—");
@@ -130,8 +134,17 @@ export default function Overview({
           <p className="label">Autopilot LLM meter</p>
           <p className="big">{tokDisplay}</p>
           <p className="sub">{tokDetail}</p>
-          <meter min="0" max="100" low="59" high="60" optimum="10" value={Math.min(100, tokPct)} />
-          <p className="sub" style={{ marginTop: 8 }}>Not your Claude session %. Just this app's calls this window.</p>
+          <meter
+            min="0"
+            max="100"
+            low={String(Math.max(1, hardPct - 15))}
+            high={String(hardPct)}
+            optimum="10"
+            value={Math.min(100, tokPct)}
+          />
+          <p className="sub" style={{ marginTop: 8 }}>
+            Autopilot self-meter (not Claude UI %). Hard-stops at {hardPct}% so you keep headroom.
+          </p>
         </div>
       </div>
 

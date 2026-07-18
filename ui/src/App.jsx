@@ -17,14 +17,20 @@ function getInitialTab() {
   return "approvals";
 }
 
-function buildCostHint(tokPct, briefsN, limitHit) {
+function buildCostHint(tokPct, briefsN, limitHit, hardPct = 60) {
   if (limitHit) {
     return { short: "Paused — wait for reset", text: "Claude session limit hit. Wait, then run Triage." };
+  }
+  if (tokPct >= hardPct) {
+    return {
+      short: `Cap ${Math.round(hardPct)}% — LLM stopped`,
+      text: `Autopilot hit its ${Math.round(hardPct)}% token cap. Non-LLM work only until the window resets.`,
+    };
   }
   if (tokPct >= 45) {
     return {
       short: `Meter ${Math.round(tokPct)}% — skip Scout`,
-      text: `Autopilot meter at ${Math.round(tokPct)}%. Run Organize or Triage instead of Scout.`,
+      text: `Autopilot meter at ${Math.round(tokPct)}% (cap ${Math.round(hardPct)}%). Run Organize or Triage instead of Scout.`,
     };
   }
   if (briefsN >= 2) {
@@ -200,7 +206,8 @@ export default function App() {
   const overviewBadge = needsCount + briefsN;
 
   const tokens = status.tokens || {};
-  const costHint = buildCostHint(tokens.pct || 0, briefsN, !!tokens.limit_hit);
+  const costHint = buildCostHint(
+    tokens.pct || 0, briefsN, !!tokens.limit_hit, tokens.hard_pct != null ? tokens.hard_pct : 60);
 
   return (
     <>

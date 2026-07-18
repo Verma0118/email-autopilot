@@ -44,17 +44,19 @@ LLM_TIMEOUT = 300
 
 # Self-metered token budget for autopilot LLM calls (rolling 5h window).
 # Anthropic does not expose the real Pro session percentage; this meters
-# the autopilot's own consumption only. Warn at 60%, hard-stop LLM at 100%.
+# the autopilot's own consumption only against SESSION_TOKEN_BUDGET.
+# Hard-stop at TOKEN_HARD_PCT so other Claude use keeps the remaining ~40%.
 SESSION_TOKEN_BUDGET = 200_000
-TOKEN_WARN_PCT = 0.60
+TOKEN_WARN_PCT = 0.50
+TOKEN_HARD_PCT = 0.60
 
-# —— Token-efficiency gates (Full run uses these) ——
+# —— Token-efficiency gates (Full run uses these; all ≤ TOKEN_HARD_PCT) ——
 # Skip scout when autopilot meter is already this high (0–1).
 SCOUT_METER_MAX_PCT = 0.45
 # Skip organize LLM work when meter is this high (still ok to no-op).
-ORGANIZE_METER_MAX_PCT = 0.90
+ORGANIZE_METER_MAX_PCT = 0.55
 # Skip bounce research when meter is this high.
-BOUNCE_METER_MAX_PCT = 0.85
+BOUNCE_METER_MAX_PCT = 0.55
 # If this many unorganized briefs are waiting, organize them and skip scout.
 SCOUT_SKIP_IF_BRIEFS_WAITING = 2
 # Cheaper scout tool loops (was 12 / 15).
@@ -64,7 +66,7 @@ SCOUT_DISCOVERY_MAX_TURNS = 10
 # 2 keeps internship + NOBE from starving while startup still gets cycles.
 SCOUT_MAX_TRACKS_PER_RUN = 2
 # Don't spend a second LLM call on lint retry when meter is already this high.
-RETRY_METER_MAX_PCT = 0.88
+RETRY_METER_MAX_PCT = 0.55
 # Cap Exa amplification: research at most this many discovery hits per track.
 SCOUT_MAX_CANDIDATES_PER_DISCOVERY = 3
 # Bounce research turns (was hardcoded 12).

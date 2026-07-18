@@ -48,7 +48,9 @@ def call(prompt, use_exa=False, max_turns=8):
         raise LLMError(f"call budget ({config.LLM_CALL_BUDGET}) exhausted")
     if status.over_budget():
         llm_down = True
-        raise LLMError("session token budget (100%) reached, LLM stages stopped")
+        hard = int(getattr(config, "TOKEN_HARD_PCT", 0.60) * 100)
+        raise LLMError(
+            f"autopilot token cap ({hard}% of budget) reached, LLM stages stopped")
     _calls_made += 1
 
     mcp_config = config.MCP_EXA if use_exa else config.MCP_EMPTY
