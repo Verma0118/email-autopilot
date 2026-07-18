@@ -15,9 +15,10 @@ import gmail
 import queue_store
 
 CSS = """
+html { color-scheme: light; }
 :root {
-  --bg0:#f6faf8; --bg1:#e8f2ed;
-  --surface:rgba(255,255,255,.78); --surface-solid:#ffffff; --surface2:rgba(255,255,255,.55);
+  --bg0:#f8fbfa; --bg1:#eef6f2;
+  --surface:rgba(255,255,255,.82); --surface-solid:#ffffff; --surface2:rgba(255,255,255,.62);
   --ink:#132019; --ink2:#5a6b64; --ink3:#879890;
   --line:rgba(18,40,32,.09); --line2:rgba(18,40,32,.15);
   --accent:#0d7a5f; --accent-soft:rgba(13,122,95,.11);
@@ -32,20 +33,6 @@ CSS = """
   --shadow-sm:0 1px 2px rgba(18,40,32,.04), 0 4px 12px rgba(18,40,32,.05);
   --frost:blur(16px) saturate(1.35);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg0:#0e1613; --bg1:#141c18;
-    --surface:rgba(22,32,28,.72); --surface-solid:#16201c; --surface2:rgba(28,40,35,.55);
-    --ink:#e8f0ec; --ink2:#9aada4; --ink3:#6d7c74;
-    --line:rgba(200,220,210,.11); --line2:rgba(200,220,210,.18);
-    --accent:#3ecf9a; --accent-soft:rgba(62,207,154,.14);
-    --good:#3dd68c; --good-bg:rgba(61,214,140,.14);
-    --warn:#f0b429; --warn-bg:rgba(240,180,41,.14);
-    --bad:#f97066; --bad-bg:rgba(249,112,102,.14);
-    --shadow:0 1px 2px rgba(0,0,0,.25), 0 12px 32px rgba(0,0,0,.32);
-    --shadow-sm:0 1px 2px rgba(0,0,0,.2), 0 6px 16px rgba(0,0,0,.25);
-  }
-}
 * { box-sizing:border-box; margin:0; }
 body {
   background:
@@ -58,14 +45,6 @@ body {
   font-weight:450;
   -webkit-font-smoothing:antialiased;
   max-width:880px; margin:0 auto; padding:36px 24px 80px;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background:
-      radial-gradient(1000px 460px at 8% -8%, rgba(62,207,154,.14), transparent 55%),
-      radial-gradient(720px 360px at 100% 0%, rgba(13,122,95,.08), transparent 45%),
-      linear-gradient(180deg, var(--bg0), var(--bg1));
-  }
 }
 a { color:var(--accent); text-decoration:none; }
 a:hover { text-decoration:underline; text-underline-offset:3px; }
@@ -119,9 +98,6 @@ h1 {
 }
 .priority .count {
   background:var(--accent); color:#fff; font-family:var(--font); border:0;
-}
-@media (prefers-color-scheme: dark) {
-  .priority .count { color:#062016; }
 }
 .priority .empty {
   border-style:dashed; border-color:color-mix(in srgb, var(--accent) 25%, var(--line2));
