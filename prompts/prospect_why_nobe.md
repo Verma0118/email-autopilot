@@ -1,0 +1,1 @@
+Tie them to sponsoring a ~12-week / one-semester ENGINEERED student PD deliverable (CAD, prototype, fixture, mechanism — not software-only). Mention Champaign-Urbana / Illinois proximity when relevant.

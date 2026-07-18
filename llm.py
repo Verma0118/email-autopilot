@@ -34,6 +34,10 @@ def _extract_json(text):
     return json.loads(m.group(0))
 
 
+def calls_remaining():
+    return max(0, config.LLM_CALL_BUDGET - _calls_made)
+
+
 def call(prompt, use_exa=False, max_turns=8):
     """Run claude -p, return parsed JSON dict. Raises LLMError."""
     global _calls_made, llm_down
@@ -44,7 +48,9 @@ def call(prompt, use_exa=False, max_turns=8):
         raise LLMError(f"call budget ({config.LLM_CALL_BUDGET}) exhausted")
     if status.over_budget():
         llm_down = True
-        raise LLMError("session token budget (100%) reached, LLM stages stopped")
+        hard = int(getattr(config, "TOKEN_HARD_PCT", 0.60) * 100)
+        raise LLMError(
+            f"autopilot token cap ({hard}% of budget) reached, LLM stages stopped")
     _calls_made += 1
 
     mcp_config = config.MCP_EXA if use_exa else config.MCP_EMPTY
@@ -94,13 +100,33 @@ def call(prompt, use_exa=False, max_turns=8):
 
 
 def call_with_retry(prompt, use_exa=False, retry_suffix=None, validate=None):
-    """One call plus one retry. validate(result) -> list of error strings."""
+    """One call; retry only on lint/validation failure when meter still has room.
+
+    The second call is a short fix-only prompt (previous JSON + errors), not a
+    full replay of the original prompt — that nearly doubled input tokens.
+    """
     result = call(prompt, use_exa=use_exa)
     errors = validate(result) if validate else []
     if not errors:
         return result, []
-    feedback = (retry_suffix or "Your previous output had these problems, fix ALL of them:") + "\n- " + "\n- ".join(errors)
-    result = call(prompt + "\n\n" + feedback, use_exa=use_exa)
+    # Skip expensive second call when we're already tight on budget
+    if (not status.meter_allows(config.RETRY_METER_MAX_PCT)
+            or calls_remaining() < 1
+            or llm_down):
+        return result, errors
+    header = retry_suffix or (
+        "Fix the previous JSON draft. Output ONLY the corrected JSON object. "
+        "Problems to fix:"
+    )
+    prev = json.dumps(result, ensure_ascii=False)
+    if len(prev) > 4000:
+        prev = prev[:4000] + "…"
+    fix_prompt = (
+        f"{header}\n- " + "\n- ".join(errors)
+        + "\n\nPrevious output:\n" + prev
+    )
+    # Retries never need Exa — drafting/lint fixes are local.
+    result = call(fix_prompt, use_exa=False)
     errors = validate(result) if validate else []
     return result, errors
 

@@ -64,7 +64,7 @@ def add(kind, track_label, name, company, email, subject, body_html, why="",
         item = {
             "id": uuid.uuid4().hex[:10],
             "created": datetime.now().isoformat(timespec="seconds"),
-            "kind": kind,                # "reply" | "outreach"
+            "kind": kind,                # "reply" | "outreach" | "bounce" | "followup"
             "track": track_label,        # startup discovery | internship outreach | NOBE | (reply)
             "name": name, "company": company, "email": email,
             "subject": subject, "body_html": body_html, "why": why,

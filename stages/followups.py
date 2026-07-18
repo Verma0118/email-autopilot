@@ -1,5 +1,8 @@
-"""Stage 3: follow-up drafts. LLM with NO tools; Python lints and drafts."""
-import json
+"""Cold follow-up drafts into the Approvals queue (never straight to Gmail).
+
+Paused by default via config.COLD_FOLLOWUPS_ENABLED. When re-enabled (or run
+with --stage followup), drafts land in Approvals like replies/outreach.
+"""
 import re
 from datetime import date
 
@@ -7,6 +10,7 @@ import config
 import crm
 import gmail
 import llm
+import queue_store
 import status
 import validators
 
@@ -15,10 +19,11 @@ def _load_prompt():
     return (config.PROMPT_DIR / "followup_draft.md").read_text()
 
 
-CAL_URL_RE = re.compile(r'href="(https://(?:calendly\.com|cal\.com|calendar\.google\.com|calendar\.app\.google)[^"]*)"')
+CAL_URL_RE = re.compile(
+    r'href="(https://(?:calendly\.com|cal\.com|calendar\.google\.com|calendar\.app\.google)[^"]*)"')
 
 
-def _render(template, contact, original_body, calendar_url):
+def _render(template, contact, original_body, calendar_url, original_subject):
     out = template
     for token, value in {
         "<<CALENDAR_URL>>": calendar_url or "NONE_FOUND",
@@ -29,7 +34,7 @@ def _render(template, contact, original_body, calendar_url):
         "<<HOOK_USED>>": contact.get("hook_used") or "",
         "<<NOTES>>": (contact.get("notes") or "")[:600],
         "<<SENT_AT>>": contact.get("sent_at") or "",
-        "<<ORIGINAL_SUBJECT>>": config.FIXED_SUBJECTS.get(contact.get("email_type"), ""),
+        "<<ORIGINAL_SUBJECT>>": original_subject or "",
         "<<ORIGINAL_EMAIL>>": (original_body or "")[:3000],
     }.items():
         out = out.replace(token, str(value))
@@ -37,48 +42,38 @@ def _render(template, contact, original_body, calendar_url):
 
 
 def run(contacts, report, cap, log, dry_run=False):
-    r = report.setdefault("followups", {"drafted": [], "skipped": [], "errors": []})
+    r = report.setdefault("followups", {"queued": [], "drafted": [], "skipped": [], "errors": []})
     candidates = crm.followup_candidates(contacts)[: cap]
     if not candidates:
         return r
 
-    try:
-        existing = gmail.list_drafts_meta()
-    except Exception as e:
-        r["errors"].append(f"cannot list drafts, aborting stage: {e}")
-        return r
     template = _load_prompt()
+    configured_cal = (getattr(config, "CALENDAR_URL", None) or "").strip()
 
     for c in candidates:
         status.check_stop()
+        if queue_store.has_pending_for(c.get("email")) or queue_store.blocked_for(c.get("email")):
+            r["skipped"].append(f"{c['name']}: already in Approvals or snoozed")
+            continue
         status.update(detail=f"drafting follow-up: {c['name']} ({c['company']})",
                       stream=config.STREAM_LABELS.get(c.get("email_type"), c.get("email_type")))
-        expected_subject = "Re: " + config.FIXED_SUBJECTS.get(c.get("email_type"), "")
-
-        # crash repair: a matching reply draft already exists in Gmail
-        dup = [d for d in existing
-               if c["email"].lower() in d["to"].lower() and d["subject"].startswith("Re:")]
-        if dup:
-            if not dry_run:
-                crm.set_status(c, "followed_up", "followup_repaired", dup[0]["draft_id"])
-                c["follow_up_count"] = 1
-                c["follow_up_draft_id"] = dup[0]["draft_id"]
-                crm.save(contacts, dry_run)
-            r["skipped"].append(f"{c['name']}: draft already existed (repaired)")
-            continue
+        original_subject = config.subject_for(c.get("email_type"), c.get("company")) or ""
+        expected_subject = "Re: " + original_subject if original_subject else "Re: "
 
         html, plain = (None, None)
         try:
             hits = gmail.search_sent_to(c["email"])
             orig = [m for m in hits if m["thread_id"] == c["gmail_thread_id"]]
             if orig:
-                html, plain = gmail.get_message_body(min(orig, key=lambda m: m["internal_ms"])["id"])
+                html, plain = gmail.get_message_body(
+                    min(orig, key=lambda m: m["internal_ms"])["id"])
         except Exception as e:
             r["errors"].append(f"{c['name']}: original fetch failed: {e}")
 
         cal_match = CAL_URL_RE.search(html or "")
-        calendar_url = cal_match.group(1) if cal_match else None
-        prompt = _render(template, c, plain or html, calendar_url)
+        calendar_url = cal_match.group(1) if cal_match else (
+            configured_cal if configured_cal.startswith("http") else None)
+        prompt = _render(template, c, plain or html, calendar_url, original_subject)
 
         def validate(result):
             if not isinstance(result, dict) or "body_html" not in result:
@@ -106,25 +101,25 @@ def run(contacts, report, cap, log, dry_run=False):
         log({"action": "followup_intent", "contact": c["id"], "to": c["email"],
              "subject": result["subject"], "new_angle": result.get("new_angle")})
         if dry_run:
-            r["drafted"].append(f"[DRY] {c['name']} ({c['company']}): {result.get('new_angle')}")
+            r["queued"].append(f"[DRY] {c['name']} ({c['company']}): {result.get('new_angle')}")
             continue
-        try:
-            draft = gmail.create_reply_draft(
-                to=c["email"], subject=result["subject"], body_html=result["body_html"],
-                thread_id=c["gmail_thread_id"], in_reply_to=c.get("gmail_message_id"),
-            )
-        except Exception as e:
-            r["errors"].append(f"{c['name']}: draft create failed: {e}")
-            continue
-        crm.set_status(c, "followed_up", "followup_drafted", draft["draft_id"])
-        c["follow_up_count"] = 1
-        c["follow_up_draft_id"] = draft["draft_id"]
-        c["follow_up_drafted_at"] = crm.now_iso()
-        crm.save(contacts, dry_run)
-        log({"action": "followup_drafted", "contact": c["id"], "draft_id": draft["draft_id"]})
-        r["drafted"].append(
-            f"{c['name']} ({c['company']}) angle: {result.get('new_angle')} "
-            f"link: {gmail.draft_link(draft['thread_id'])}\n"
-            f"  BODY: {validators._strip_html(result['body_html'])}"
+        item = queue_store.add(
+            kind="followup",
+            track_label=config.STREAM_LABELS.get(c.get("email_type"), "follow-up"),
+            name=c["name"], company=c.get("company"), email=c["email"],
+            subject=result["subject"], body_html=result["body_html"],
+            why=result.get("new_angle", "cold follow-up"),
+            thread_id=c.get("gmail_thread_id"),
+            in_reply_to=c.get("gmail_message_id"),
+            meta={"contact_id": c["id"], "email_type": c.get("email_type")},
         )
+        # Mark so we don't re-draft until approve/skip resolves lifecycle
+        c["follow_up_drafted_at"] = crm.now_iso()
+        c["follow_up_draft_id"] = f"queue:{item['id']}"
+        crm.touch(c, "followup_queued", item["id"])
+        crm.save(contacts, dry_run)
+        log({"action": "followup_queued", "contact": c["id"], "item": item["id"]})
+        r["queued"].append(f"{c['name']} ({c['company']}): {result.get('new_angle')}")
+        # Keep drafted list for digest compatibility
+        r["drafted"].append(f"{c['name']} ({c['company']}) queued for Approvals")
     return r

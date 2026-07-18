@@ -1,4 +1,4 @@
-"""Deterministic style lint (agent-rules.md section 4) and bounce confidence gate.
+"""Deterministic style lint and bounce confidence gate.
 
 The LLM's output is never trusted. Every draft passes these checks before any
 Gmail draft is created; every bounce correction passes the gate before use.

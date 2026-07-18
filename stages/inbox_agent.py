@@ -44,19 +44,26 @@ def _build_rundown(contacts, sync):
 
 
 def _action_items(contacts, sync):
+    """Short, non-duplicative inbox todos (Needs you owns deeper links)."""
     items = []
-    for line in (sync.get("replies") or [])[:6]:
-        items.append(f"Handle reply: {line}")
-    for c in contacts:
-        if c.get("status") in ("replied", "converted") and c.get("name"):
-            label = f"Reply to {c['name']}"
-            if c.get("company"):
-                label += f" ({c['company']})"
-            if label not in items and len(items) < 8:
-                items.append(label)
-    for line in (sync.get("bounces") or [])[:3]:
-        items.append(f"Fix bounce: {line}")
-    return items[:10]
+    seen = set()
+    for line in (sync.get("replies") or [])[:5]:
+        label = f"Handle reply: {line}"
+        if label not in seen:
+            items.append(label)
+            seen.add(label)
+    for line in (sync.get("bounces") or [])[:4]:
+        label = f"Fix bounce: {line}"
+        if label not in seen:
+            items.append(label)
+            seen.add(label)
+    bounced = [c for c in contacts if c.get("status") == "bounced"]
+    for c in bounced[:3]:
+        label = f"Unresolved bounce: {c.get('name')} ({c.get('company') or '?'})"
+        if label not in seen:
+            items.append(label)
+            seen.add(label)
+    return items[:8]
 
 
 def write_rundown(contacts, report, log, dry_run=False):

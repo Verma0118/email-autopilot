@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Build the React control panel into ui/dist (served by panel.py).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT/ui"
+if [[ ! -d node_modules ]]; then
+  npm install
+fi
+npm run build
+echo "UI built → $ROOT/ui/dist (restart panel or hit Update after pull)"

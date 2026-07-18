@@ -185,9 +185,19 @@ def add_usage(usage):
     return pct
 
 
+def token_hard_limit():
+    """Absolute token count where autopilot LLM calls hard-stop."""
+    budget = config.SESSION_TOKEN_BUDGET or 0
+    hard = float(getattr(config, "TOKEN_HARD_PCT", 1.0) or 1.0)
+    hard = max(0.05, min(1.0, hard))
+    return int(budget * hard)
+
+
 def over_budget():
+    """True when autopilot has hit TOKEN_HARD_PCT of SESSION_TOKEN_BUDGET."""
     data = _load_tokens()
-    return config.SESSION_TOKEN_BUDGET and data["tokens"] >= config.SESSION_TOKEN_BUDGET
+    limit = token_hard_limit()
+    return bool(limit) and data["tokens"] >= limit
 
 
 def limit_hit(reset_text):
@@ -205,9 +215,32 @@ def limit_hit(reset_text):
 def tokens_snapshot():
     data = _load_tokens()
     budget = config.SESSION_TOKEN_BUDGET
+    hard = token_hard_limit()
     limited = bool(data.get("limit_hit"))
+    hard_pct = float(getattr(config, "TOKEN_HARD_PCT", 1.0) or 1.0) * 100.0
+    used_pct = round(100 * data["tokens"] / budget, 1) if budget else 0
+    # Cap displayed pct at hard stop once over (unless Anthropic limit latched)
+    if not limited and hard and data["tokens"] >= hard:
+        used_pct = round(hard_pct, 1)
     return {"used": data["tokens"], "budget": budget, "calls": data["calls"],
-            "pct": 100.0 if limited else (round(100 * data["tokens"] / budget, 1) if budget else 0),
+            "pct": 100.0 if limited else used_pct,
+            "hard_pct": round(hard_pct, 1),
+            "hard_limit": hard,
             "limit_hit": limited,
             "limit_reset": data.get("limit_reset"),
             "window_started": datetime.fromtimestamp(data["window_start"]).strftime("%H:%M")}
+
+
+def budget_pct():
+    """Autopilot meter 0–100 of SESSION_TOKEN_BUDGET. 100 if Anthropic limit latched."""
+    return float(tokens_snapshot().get("pct") or 0)
+
+
+def meter_allows(max_pct):
+    """True if we still have room under max_pct (0–1), never past TOKEN_HARD_PCT."""
+    snap = tokens_snapshot()
+    if snap.get("limit_hit") or over_budget():
+        return False
+    hard = float(getattr(config, "TOKEN_HARD_PCT", 1.0) or 1.0)
+    ceiling = min(float(max_pct), hard)
+    return budget_pct() < (ceiling * 100.0)
