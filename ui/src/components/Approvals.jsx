@@ -456,14 +456,18 @@ export default function Approvals({
   return (
     <>
       <div className="section-head">
-        <h2>Approvals <span className="qsplit">{splitLabel}</span></h2>
-        <p className="hint">
-          <span className="kbd">j</span>/<span className="kbd">k</span> move, <span className="kbd">a</span> approve, <span className="kbd">?</span> help
-        </p>
+        <h2>Approvals {splitLabel ? <span className="qsplit">{splitLabel}</span> : null}</h2>
+        {sorted.length > 0 && (
+          <p className="hint">
+            <span className="kbd">j</span>/<span className="kbd">k</span> move, <span className="kbd">a</span> approve, <span className="kbd">?</span> help
+          </p>
+        )}
       </div>
-      <p className="section-lede">
-        Review drafts before they land in Gmail. Approve creates a draft only; nothing sends.
-      </p>
+      {sorted.length > 0 && (
+        <p className="section-lede">
+          Review drafts before they land in Gmail. Approve creates a draft only; nothing sends.
+        </p>
+      )}
 
       {needsCount > 0 && (
         <p className="urgency-banner">
@@ -472,6 +476,7 @@ export default function Approvals({
         </p>
       )}
 
+      {(sorted.length > 0 || searching) && (
       <div className="filters" id="qfilters">
         {FILTERS.map(f => (
           <button
@@ -508,17 +513,19 @@ export default function Approvals({
           onKeyDown={ev => { if (ev.key === "Escape") ev.currentTarget.blur(); }}
         />
       </div>
+      )}
 
       <ul className="queue-list" id="queue">
         {filtered.length === 0 ? (
-          <li className="empty">
+          <li className="empty calm">
             {searching ? (
               <><strong>No matches</strong>Try another filter or clear search.</>
             ) : (
               <>
-                <strong>Nothing waiting</strong>
-                Run triage to sync inbox and draft replies.
-                <br />
+                <strong>All clear</strong>
+                <span className="empty-body">
+                  Nothing waiting for approval. When you are ready, run Triage to sync inbox and draft replies.
+                </span>
                 <button
                   type="button"
                   className="btn btn-primary cta"

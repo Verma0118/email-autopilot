@@ -122,34 +122,47 @@ export default function Overview({
         <h2>Overview</h2>
         <p className="hint lastrun">Last run: <strong>{lastRunText}</strong></p>
       </div>
-      <p className="section-lede">
-        Status, meter, and what to run next. Keep Approvals clear before starting another Full run.
-      </p>
+      {!status.running && (
+        <p className="section-lede">
+          Status, meter, and what to run next. Keep Approvals clear before starting another Full run.
+        </p>
+      )}
 
-      <div className="status-strip">
-        <div className="block compact">
-          <p className="label">Activity</p>
-          <p className="big">{stageLabel}</p>
-          <p className="sub">{status.detail || "idle"}</p>
-          {status.stream && <span className="stream">{status.stream}</span>}
+      {status.running ? (
+        <div className="live-now">
+          <span className="run-pulse" aria-hidden="true" />
+          <div>
+            <p className="label">Live run</p>
+            <p className="live-now-title">{stageLabel}</p>
+            <p className="sub">{status.detail || "Working…"}</p>
+            {status.stream && <span className="stream">{status.stream}</span>}
+            <p className="sub" style={{ marginTop: 10 }}>
+              Meter {tokDisplay}. Open Activity for the event feed.
+            </p>
+          </div>
         </div>
-        <div className={`block compact tok${tokClass}`}>
-          <p className="label">Autopilot LLM meter</p>
-          <p className="big">{tokDisplay}</p>
-          <p className="sub">{tokDetail}</p>
-          <meter
-            min="0"
-            max="100"
-            low={String(Math.max(1, hardPct - 15))}
-            high={String(hardPct)}
-            optimum="10"
-            value={Math.min(100, tokPct)}
-          />
-          <p className="sub" style={{ marginTop: 8 }}>
-            Autopilot self-meter (not Claude UI %). Hard-stops at {hardPct}% so you keep headroom.
-          </p>
+      ) : (
+        <div className="status-strip">
+          <div className="block compact">
+            <p className="label">Status</p>
+            <p className="big">{stageLabel}</p>
+            <p className="sub">{status.detail || "idle"}</p>
+          </div>
+          <div className={`block compact tok${tokClass}`}>
+            <p className="label">LLM meter</p>
+            <p className="big">{tokDisplay}</p>
+            <p className="sub">{tokDetail}</p>
+            <meter
+              min="0"
+              max="100"
+              low={String(Math.max(1, hardPct - 15))}
+              high={String(hardPct)}
+              optimum="10"
+              value={Math.min(100, tokPct)}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {suggestion && (
         <div className="next-run">

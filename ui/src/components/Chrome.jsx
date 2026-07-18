@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { postRun, postStop, postUpdate } from "../api.js";
+import { prettyStage } from "../pipeline.js";
 
 const PRIMARY_MODES = [
   { label: "Full", stage: "" },
@@ -25,19 +26,6 @@ export default function Chrome({
   runMode, setRunMode, addToast, pollStatus, costHint,
 }) {
   const running = !!status.running;
-  const stageOnly = running ? (status.stage || "running") : "idle";
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef(null);
-  const moreSelected = MORE_MODES.some(m => m.stage === runMode);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onDoc = (ev) => {
-      if (moreRef.current && !moreRef.current.contains(ev.target)) setMoreOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [moreOpen]);
 
   async function handleRun() {
     const res = await postRun(runMode || null);
@@ -72,94 +60,73 @@ export default function Chrome({
           <div className="brand">
             <span className={`dot${running ? " live" : ""}`} aria-hidden="true" />
             <h1>EmailCRM</h1>
-            <span
-              className="stagechip"
-              title={running ? (status.detail || stageOnly) : "idle"}
-            >
-              {stageOnly}
-            </span>
-          </div>
-          <div className="actions">
-            <span className="chrome-label">Mode</span>
-            <div className="run-modes" title="What to run" aria-label="Run mode">
-              {PRIMARY_MODES.map(m => (
-                <button
-                  key={m.stage || "full"}
-                  type="button"
-                  className={`chip${runMode === m.stage ? " active" : ""}`}
-                  onClick={() => setRunMode(m.stage)}
-                >
-                  {m.label}
-                </button>
-              ))}
-              <div className="mode-more" ref={moreRef}>
-                <button
-                  type="button"
-                  className={`chip more-trigger${moreSelected ? " active" : ""}`}
-                  aria-expanded={moreOpen}
-                  aria-haspopup="listbox"
-                  onClick={() => setMoreOpen(o => !o)}
-                >
-                  More{moreSelected ? `: ${modeLabel(runMode)}` : ""}
-                </button>
-                {moreOpen && (
-                  <div className="mode-more-menu" role="listbox">
-                    {MORE_MODES.map(m => (
-                      <button
-                        key={m.stage}
-                        type="button"
-                        role="option"
-                        aria-selected={runMode === m.stage}
-                        className={runMode === m.stage ? "active" : ""}
-                        onClick={() => {
-                          setRunMode(m.stage);
-                          setMoreOpen(false);
-                        }}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            {costHint?.text && (
-              <span className="cost-hint" title={costHint.text}>
-                {costHint.short || costHint.text}
+            {!running && <span className="stagechip">Ready</span>}
+            {running && (
+              <span className="stagechip live" title={status.detail || ""}>
+                {prettyStage(status.stage)}
               </span>
             )}
-            <button
-              id="chrome-run-btn"
-              type="button"
-              className="btn btn-primary"
-              disabled={running}
-              onClick={handleRun}
-            >
-              Run now
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={!running}
-              onClick={handleStop}
-            >
-              Stop
-            </button>
-            <button
-              type="button"
-              className="btn btn-quiet"
-              title="git pull + reload panel"
-              onClick={handleUpdate}
-            >
-              Update
-            </button>
+          </div>
+          <div className="actions">
+            {!running && (
+              <>
+                <label className="mode-select-wrap">
+                  <span className="chrome-label">Mode</span>
+                  <select
+                    className="mode-select"
+                    value={runMode}
+                    onChange={(ev) => setRunMode(ev.target.value)}
+                    aria-label="Run mode"
+                  >
+                    {PRIMARY_MODES.map(m => (
+                      <option key={m.stage || "full"} value={m.stage}>{m.label}</option>
+                    ))}
+                    <optgroup label="More">
+                      {MORE_MODES.map(m => (
+                        <option key={m.stage} value={m.stage}>{m.label}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </label>
+                {costHint?.text && (
+                  <span className="cost-hint" title={costHint.text}>
+                    {costHint.short || costHint.text}
+                  </span>
+                )}
+                <button
+                  id="chrome-run-btn"
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleRun}
+                >
+                  Run {modeLabel(runMode)}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  title="git pull + reload panel"
+                  onClick={handleUpdate}
+                >
+                  Update
+                </button>
+              </>
+            )}
+            {running && (
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={handleStop}
+              >
+                Stop
+              </button>
+            )}
           </div>
         </div>
         <nav className="tabs" role="tablist" aria-label="Panel sections">
           {[
             { id: "approvals", label: "Approvals", badge: queueBadge },
             { id: "overview", label: "Overview", badge: overviewBadge },
-            { id: "activity", label: "Activity", badge: 0 },
+            { id: "activity", label: "Activity", badge: running ? 1 : 0 },
           ].map(t => (
             <button
               key={t.id}
@@ -170,10 +137,14 @@ export default function Chrome({
               onClick={() => onTabChange(t.id)}
             >
               {t.label}
-              {t.badge != null && (
-                <span className="badge" data-n={String(t.badge)}>
-                  {t.badge}
-                </span>
+              {t.id === "activity" && running ? (
+                <span className="badge live-badge">live</span>
+              ) : (
+                t.badge != null && (
+                  <span className="badge" data-n={String(t.badge)}>
+                    {t.badge}
+                  </span>
+                )
               )}
             </button>
           ))}

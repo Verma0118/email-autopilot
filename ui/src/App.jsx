@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getQueue, getHistory, getStatus, getReport, getVersion, postRun } from "./api.js";
+import { getQueue, getHistory, getStatus, getReport, getVersion, postRun, postStop } from "./api.js";
 import Chrome from "./components/Chrome.jsx";
+import RunBanner from "./components/RunBanner.jsx";
 import Approvals from "./components/Approvals.jsx";
 import Overview from "./components/Overview.jsx";
 import Activity from "./components/Activity.jsx";
 import HelpOverlay from "./components/HelpOverlay.jsx";
 import Toasts from "./components/Toasts.jsx";
+import { prettyStage } from "./pipeline.js";
 
 const VALID_TABS = ["approvals", "overview", "activity"];
 
@@ -149,6 +151,13 @@ export default function App() {
     }
   }, [showTab, refreshReport, refreshQueue, addToast]);
 
+  const onStop = useCallback(async () => {
+    const res = await postStop();
+    if (!res.ok) { addToast("Could not stop"); return; }
+    addToast("Stop requested");
+    await pollStatus();
+  }, [addToast, pollStatus]);
+
   useEffect(() => {
     (async () => {
       await Promise.all([refreshQueue(), refreshReport(), refreshHistory()]);
@@ -175,12 +184,22 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const t1 = setInterval(pollStatus, 2000);
+    const interval = status.running ? 1000 : 2000;
+    const t1 = setInterval(pollStatus, interval);
     const t2 = setInterval(refreshQueue, 5000);
     const t3 = setInterval(refreshReport, 15000);
     const t4 = setInterval(refreshHistory, 20000);
     return () => { clearInterval(t1); clearInterval(t2); clearInterval(t3); clearInterval(t4); };
-  }, [pollStatus, refreshQueue, refreshReport, refreshHistory]);
+  }, [pollStatus, refreshQueue, refreshReport, refreshHistory, status.running]);
+
+  useEffect(() => {
+    const base = "EmailCRM Autopilot";
+    if (status.running) {
+      document.title = `Running · ${prettyStage(status.stage)} · ${base}`;
+    } else {
+      document.title = base;
+    }
+  }, [status.running, status.stage]);
 
   useEffect(() => {
     const onKey = (ev) => {
@@ -222,6 +241,11 @@ export default function App() {
         addToast={addToast}
         pollStatus={pollStatus}
         costHint={costHint}
+      />
+      <RunBanner
+        status={status}
+        onStop={onStop}
+        onShowActivity={() => showTab("activity")}
       />
       <main>
         <div className={`panel${tab === "approvals" ? " active" : ""}`} id="panel-approvals" role="tabpanel">
