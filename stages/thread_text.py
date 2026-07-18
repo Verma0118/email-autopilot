@@ -5,12 +5,27 @@ from datetime import datetime
 import config
 import gmail
 
+_OOO_RE = re.compile(
+    r"\b("
+    r"out of (the )?office|automatic reply|auto[- ]?reply|away from (the )?office|"
+    r"on (annual |medical )?leave|maternity leave|ooo\b|vacation|"
+    r"i am currently away|i'?m currently away|will be back"
+    r")\b",
+    re.I,
+)
+
+
+def is_ooo_text(text):
+    return bool(_OOO_RE.search(text or ""))
+
 
 def thread_text(thread_id):
     """Render thread oldest-first with direction markers (bounded for LLM cost).
 
-    Returns (text, last_from_us_date, subject). Keeps the newest N messages so
-    long threads do not dump unbounded context into every reply call.
+    Returns (text, last_from_us_date, subject, meta) where meta has:
+      last_from_us (bool): newest message is from Aarav
+      last_body (str): newest message body snippet
+      ooo (bool): newest inbound looks like an auto-reply / OOO
     """
     svc = gmail.get_service()
     t = svc.users().threads().get(userId="me", id=thread_id, format="full").execute()
@@ -18,6 +33,7 @@ def thread_text(thread_id):
     max_msgs = max(1, int(getattr(config, "REPLY_THREAD_MAX_MSGS", 8) or 8))
     msg_chars = max(200, int(getattr(config, "REPLY_THREAD_MSG_CHARS", 1000) or 1000))
     parts, last_us_ms, subject = [], 0, None
+    last_from_us, last_body = True, ""
     for m in msgs:
         h = {x["name"].lower(): x["value"] for x in m["payload"].get("headers", [])}
         if subject is None:
@@ -34,5 +50,12 @@ def thread_text(thread_id):
         body = re.sub(r"\s+", " ", body)[:msg_chars]
         when = datetime.fromtimestamp(int(m.get("internalDate", 0)) / 1000).date()
         parts.append(f"[{when} {'FROM_US' if from_us else 'FROM_THEM'}] {body}")
+        last_from_us = from_us
+        last_body = body
     last_us = datetime.fromtimestamp(last_us_ms / 1000).date() if last_us_ms else None
-    return "\n\n".join(parts), last_us, subject
+    meta = {
+        "last_from_us": last_from_us,
+        "last_body": last_body,
+        "ooo": (not last_from_us) and is_ooo_text(last_body),
+    }
+    return "\n\n".join(parts), last_us, subject, meta

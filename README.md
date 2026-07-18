@@ -13,17 +13,20 @@ renders a dashboard. **Drafts only: the OAuth token has no send scope.**
 
 All LLM drafts land in Approvals (`http://localhost:8787`). Nothing sends.
 
-| Stage | What it does | LLM |
+| Stage | What it does | Needs Claude? |
 |---|---|---|
-| inbox | reply/bounce/sent detection, thread backfill, rundown | no |
-| reply | open-thread replies / promise follow-ups → Approvals | yes |
-| organize | scout briefs → outreach drafts → Approvals | yes |
-| scout | ICP discovery + research briefs (2 tracks/day) | yes (Exa) |
-| bounce | corrected address + original body → Approvals | yes (Exa) |
-| followup | cold no-reply (paused: `COLD_FOLLOWUPS_ENABLED`) | yes |
-| digest | markdown + `dashboard.html` | no |
+| inbox | reply/bounce/sent detection, thread backfill, rundown | **No** |
+| Approvals / Update / dismiss | panel actions, Gmail draft create on approve | **No** |
+| digest | markdown + `dashboard.html` | **No** |
+| reply | open-thread drafts → Approvals (skips OOO / already-replied without LLM) | Yes |
+| organize | scout briefs → outreach drafts → Approvals | Yes |
+| scout | ICP discovery + research briefs (1 track/day, tight turns) | Yes (Exa) |
+| bounce | corrected address research → Approvals | Yes (Exa) |
+| followup | cold no-reply (paused: `COLD_FOLLOWUPS_ENABLED`) | Yes |
 
-Autopilot LLM usage hard-stops at `TOKEN_HARD_PCT` (60%) of `SESSION_TOKEN_BUDGET`.
+When Claude is session-limited or the autopilot meter is capped, Phase 1 (inbox) and digest still run. Draft stages defer cleanly instead of burning failed calls.
+
+Autopilot LLM usage hard-stops at `TOKEN_HARD_PCT` (50%) of `SESSION_TOKEN_BUDGET`. Scout gates at 32%; reply/organize/bounce at 42%. Organize writes at most 3 drafts per run; scout researches at most 2 candidates per discovery.
 
 ## Architecture
 

@@ -1,34 +1,30 @@
 import { useState, useRef, useEffect } from "react";
-import { postRun, postStop, postUpdate } from "../api.js";
+import { postRun } from "../api.js";
+import { prettyStage } from "../pipeline.js";
 
-const PRIMARY_MODES = [
-  { label: "Full", stage: "" },
-  { label: "Triage", stage: "triage" },
+const MODES = [
+  { label: "Check email", stage: "triage", primary: true },
+  { label: "Full run", stage: "" },
   { label: "Organize", stage: "organize" },
   { label: "Scout", stage: "scout" },
-];
-
-const MORE_MODES = [
-  { label: "Reply", stage: "reply" },
-  { label: "Bounce", stage: "bounce" },
+  { label: "Reply only", stage: "reply" },
+  { label: "Bounce only", stage: "bounce" },
   { label: "Digest", stage: "digest" },
 ];
 
-const ALL_MODES = [...PRIMARY_MODES, ...MORE_MODES];
-
 function modeLabel(stage) {
-  return ALL_MODES.find(m => m.stage === stage)?.label || "Full";
+  return MODES.find(m => m.stage === stage)?.label || "Check email";
 }
 
 export default function Chrome({
   tab, onTabChange, status, queueBadge, overviewBadge,
-  runMode, setRunMode, addToast, pollStatus, costHint,
+  runMode, setRunMode, addToast, pollStatus,
 }) {
   const running = !!status.running;
-  const stageOnly = running ? (status.stage || "running") : "idle";
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef(null);
-  const moreSelected = MORE_MODES.some(m => m.stage === runMode);
+  const effectiveMode = runMode === undefined || runMode === null ? "triage" : runMode;
+  const isAdvanced = effectiveMode !== "triage";
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -40,126 +36,82 @@ export default function Chrome({
   }, [moreOpen]);
 
   async function handleRun() {
-    const res = await postRun(runMode || null);
+    const stage = effectiveMode;
+    const res = await postRun(stage || null);
     if (res.status === 409) { addToast("Already running"); return; }
     if (!res.ok) { addToast("Could not start run"); return; }
-    addToast(modeLabel(runMode) + " run started");
+    addToast(modeLabel(stage) + " started");
     await pollStatus();
   }
 
-  async function handleStop() {
-    const res = await postStop();
-    if (!res.ok) { addToast("Could not stop"); return; }
-    addToast("Stop requested");
-    await pollStatus();
-  }
-
-  async function handleUpdate() {
-    addToast("Pulling latest from GitHub…");
-    const res = await postUpdate();
-    if (!res.ok || !res.data.ok) {
-      addToast(res.data.error || res.data.message || "Update failed — check git on this Mac");
-      return;
-    }
-    addToast(res.data.changed ? "Updated — reloading panel…" : "Already latest — reloading…");
-    setTimeout(() => location.reload(), 1400);
-  }
+  const runLabel = modeLabel(effectiveMode);
 
   return (
-    <div className="chrome">
+    <div className={`chrome${running ? " is-live" : ""}`}>
       <div className="chrome-inner">
         <div className="toprow">
           <div className="brand">
             <span className={`dot${running ? " live" : ""}`} aria-hidden="true" />
             <h1>EmailCRM</h1>
-            <span
-              className="stagechip"
-              title={running ? (status.detail || stageOnly) : "idle"}
-            >
-              {stageOnly}
-            </span>
+            {running ? (
+              <span
+                className="stagechip live"
+                title={status.detail || ""}
+              >
+                {prettyStage(status.stage)}
+              </span>
+            ) : null}
           </div>
           <div className="actions">
-            <span className="chrome-label">Mode</span>
-            <div className="run-modes" title="What to run" aria-label="Run mode">
-              {PRIMARY_MODES.map(m => (
+            {!running && (
+              <div className="run-group" ref={moreRef}>
                 <button
-                  key={m.stage || "full"}
+                  id="chrome-run-btn"
                   type="button"
-                  className={`chip${runMode === m.stage ? " active" : ""}`}
-                  onClick={() => setRunMode(m.stage)}
+                  className="btn btn-primary"
+                  onClick={handleRun}
                 >
-                  {m.label}
+                  {runLabel}
                 </button>
-              ))}
-              <div className="mode-more" ref={moreRef}>
                 <button
                   type="button"
-                  className={`chip more-trigger${moreSelected ? " active" : ""}`}
+                  className={`btn btn-quiet btn-sm more-modes${isAdvanced ? " active" : ""}`}
                   aria-expanded={moreOpen}
                   aria-haspopup="listbox"
                   onClick={() => setMoreOpen(o => !o)}
+                  title="Other run types"
                 >
-                  More{moreSelected ? ` · ${modeLabel(runMode)}` : ""}
+                  ▾
                 </button>
                 {moreOpen && (
-                  <div className="mode-more-menu" role="listbox">
-                    {MORE_MODES.map(m => (
+                  <div className="mode-menu" role="listbox">
+                    {MODES.map(m => (
                       <button
-                        key={m.stage}
+                        key={m.stage || "full"}
                         type="button"
                         role="option"
-                        aria-selected={runMode === m.stage}
-                        className={runMode === m.stage ? "active" : ""}
+                        aria-selected={effectiveMode === m.stage}
+                        className={effectiveMode === m.stage ? "active" : ""}
                         onClick={() => {
                           setRunMode(m.stage);
                           setMoreOpen(false);
                         }}
                       >
                         {m.label}
+                        {m.primary && <span className="mode-hint">default</span>}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-            </div>
-            {costHint?.text && (
-              <span className="cost-hint" title={costHint.text}>
-                {costHint.short || costHint.text}
-              </span>
             )}
-            <button
-              id="chrome-run-btn"
-              type="button"
-              className="btn btn-primary"
-              disabled={running}
-              onClick={handleRun}
-            >
-              Run now
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={!running}
-              onClick={handleStop}
-            >
-              Stop
-            </button>
-            <button
-              type="button"
-              className="btn btn-quiet"
-              title="git pull + reload panel"
-              onClick={handleUpdate}
-            >
-              Update
-            </button>
           </div>
         </div>
         <nav className="tabs" role="tablist" aria-label="Panel sections">
           {[
-            { id: "approvals", label: "Approvals", badge: queueBadge },
-            { id: "overview", label: "Overview", badge: overviewBadge },
-            { id: "activity", label: "Activity", badge: 0 },
+            { id: "approvals", label: "Inbox", badge: queueBadge },
+            { id: "overview", label: "Status", badge: overviewBadge },
+            { id: "activity", label: "Live", badge: running ? 1 : 0 },
           ].map(t => (
             <button
               key={t.id}
@@ -170,10 +122,17 @@ export default function Chrome({
               onClick={() => onTabChange(t.id)}
             >
               {t.label}
-              {t.badge != null && (
-                <span className="badge" data-n={String(t.badge)}>
-                  {t.badge}
+              {t.id === "activity" && running ? (
+                <span className="badge live-badge">
+                  <span className="live-dot" aria-hidden="true" />
+                  live
                 </span>
+              ) : (
+                t.badge != null && (
+                  <span className="badge" data-n={String(t.badge)}>
+                    {t.badge}
+                  </span>
+                )
               )}
             </button>
           ))}

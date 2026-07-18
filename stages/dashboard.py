@@ -272,11 +272,14 @@ def _build_needs(contacts, sync, we_owe, br, pending_emails=None, briefs_n=0,
     pending_kinds = pending_kinds or {}
     items = []
 
-    def add(kind, label, raw, href=None):
-        text = f"{label}: {raw}"
+    def add(kind, title, detail, href=None, action=None):
+        text = f"{title}: {detail}" if not action else f"{title}. {action}: {detail}"
         items.append({
             "id": _need_id(kind, text),
             "kind": kind,
+            "title": title,
+            "detail": detail,
+            "action": action,
             "text": text,
             "href": href,
         })
@@ -287,19 +290,21 @@ def _build_needs(contacts, sync, we_owe, br, pending_emails=None, briefs_n=0,
         # Already queued for approval — Approvals tab owns it
         if email and email in pending:
             continue
-        add("reply", "Reply received. Respond", x, gmail.thread_link((c or {}).get("gmail_thread_id")))
+        add("reply", "Reply received", x, gmail.thread_link((c or {}).get("gmail_thread_id")),
+            action="Respond")
     for x in we_owe:
         # "Name (Company): reason" — match contact on the left of the first colon chunk
         head = x.split(":", 1)[0].strip()
         c = idx.get(head)
-        add("owe", "You owe them contact later. Calendar it", x,
-            gmail.thread_link((c or {}).get("gmail_thread_id")))
+        add("owe", "Follow up later", x,
+            gmail.thread_link((c or {}).get("gmail_thread_id")),
+            action="Add to calendar")
     for x in br.get("manual", []):
         m = _VERIFIED_EMAIL_RE.search(x)
         href = f"mailto:{m.group(1)}" if m else None
-        add("manual", "Verified address found, send manually", x, href)
+        add("manual", "Verified address found", x, href, action="Send manually")
     for x in sync.get("backfill_ambiguous", []):
-        add("ambiguous", "Thread ambiguous, check manually", x, None)
+        add("ambiguous", "Thread needs a look", x, None, action="Check manually")
     # Unresolved bounces not yet queued for Approvals
     for c in contacts or []:
         if c.get("status") != "bounced":
@@ -311,16 +316,19 @@ def _build_needs(contacts, sync, we_owe, br, pending_emails=None, briefs_n=0,
         if br_status in ("queued", "retried", "dead", "manual"):
             continue
         label = f"{c.get('name')} ({c.get('company') or '?'})"
-        add("bounce", "Unresolved bounce — run Bounce or Triage", label,
-            gmail.thread_link(c.get("gmail_thread_id")))
+        add("bounce", "Unresolved bounce", label,
+            gmail.thread_link(c.get("gmail_thread_id")),
+            action="Run Bounce or Triage")
     if briefs_n >= 2:
-        add("briefs", "Briefs waiting — run Organize",
-            f"{briefs_n} unorganized prospect briefs", "/#overview")
+        add("briefs", "Briefs waiting",
+            f"{briefs_n} unorganized prospect briefs", "/#overview",
+            action="Run Organize")
     bounce_pending = pending_kinds.get("bounce", 0)
     if bounce_pending:
-        add("bounce_q", "Bounce fixes in Approvals",
+        add("bounce_q", "Bounce fixes ready",
             f"{bounce_pending} corrected draft{'s' if bounce_pending != 1 else ''} to review",
-            "/#approvals")
+            "/#approvals",
+            action="Open Approvals")
     return items
 
 
@@ -409,7 +417,7 @@ def render(contacts, report, llm_calls, dry_run=False):
     needs_block = (
         f'<div class="priority rise" aria-label="Needs you">'
         f'<h2>{_I["user"]}Needs you <span class="count">{needs_n}</span></h2>'
-        f'{_needs_list(needs_items, "Nothing needs you right now — you are caught up.")}'
+        f'{_needs_list(needs_items, "Nothing needs you right now. You are caught up.")}'
         f'</div>'
     )
 
@@ -481,9 +489,13 @@ if (location.hostname === "127.0.0.1" || location.hostname === "localhost")
         "action_items": action_items[:12],
         "open_conversations": counts.get("replied", 0) + counts.get("converted", 0),
         "bounces": counts.get("bounced", 0),
+        "inbox_agent": {
+            "rundown": ia.get("rundown") or "",
+            "rundown_sections": ia.get("rundown_sections") or [],
+        },
         "summary": (
-            f"{needs_n} need you · {approval_n} in Approvals · "
-            f"{briefs_queued} briefs to organize · {len(errors)} errors"
+            f"{needs_n} need you, {approval_n} in Approvals, "
+            f"{briefs_queued} briefs to organize, {len(errors)} errors"
         ),
     }, indent=1))
 

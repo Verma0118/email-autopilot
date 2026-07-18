@@ -159,64 +159,84 @@ def main():
             guarded("inbox rundown", lambda: inbox_agent.write_rundown(
                 contacts, report, log, dry_run=args.dry_run))
 
-        # —— Phase 2: serial LLM by priority (saves tokens vs parallel) ——
-        # reply first (CRM value), then drain waiting briefs, then scout only
-        # if the meter still has room and the organize queue isn't backed up.
-        if want("reply"):
-            guarded("reply agent", lambda: reply_agent.run(
-                contacts, report, args.cap or config.NUDGE_DAILY_CAP, log,
-                dry_run=args.dry_run))
-
-        if want("organize"):
-            if status.meter_allows(config.ORGANIZE_METER_MAX_PCT):
-                guarded("organizer", lambda: organizer.run(
-                    contacts, report, log, dry_run=args.dry_run))
-            else:
-                _skip(report, "organizer",
-                      f"meter {status.budget_pct():.0f}% — organize deferred", log)
-
-        scout_ran = False
-        if want("scout"):
-            waiting = organizer.waiting_count()
-            skip_reason = None
-            # Full-run only: prefer draining briefs over mining more
-            if stage is None and waiting >= config.SCOUT_SKIP_IF_BRIEFS_WAITING:
-                skip_reason = (f"skipping scout: {waiting} briefs waiting "
-                               f"(≥{config.SCOUT_SKIP_IF_BRIEFS_WAITING})")
-            elif not status.meter_allows(config.SCOUT_METER_MAX_PCT):
-                skip_reason = (f"skipping scout: meter {status.budget_pct():.0f}% "
-                               f"(gate {config.SCOUT_METER_MAX_PCT * 100:.0f}%)")
-            elif llm.llm_down:
-                skip_reason = "skipping scout: LLM down for this run"
-            if skip_reason:
-                _skip(report, "prospecting", skip_reason, log)
-            else:
-                guarded("scout agent", lambda: prospecting.run(
-                    contacts, report, args.cap, log, dry_run=args.dry_run))
-                scout_ran = True
-
-        # Second organize pass after scout produced new briefs
-        if scout_ran and want("organize"):
-            if status.meter_allows(config.ORGANIZE_METER_MAX_PCT):
-                guarded("organizer", lambda: organizer.run(
-                    contacts, report, log, dry_run=args.dry_run))
-            else:
-                _skip(report, "organizer",
-                      f"meter {status.budget_pct():.0f}% — post-scout organize deferred", log)
-
-        if want("bounce"):
-            if status.meter_allows(config.BOUNCE_METER_MAX_PCT):
-                guarded("bounce retry", lambda: bounce_retry.run(
-                    contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log,
+        # —— Phase 2: LLM drafts (skip cleanly when Claude is unavailable) ——
+        # reply → organize → scout (gated) → organize → bounce → followups
+        if not llm.available():
+            snap = status.tokens_snapshot()
+            why = ("Claude session limit latched"
+                   if snap.get("limit_hit")
+                   else "Claude / token budget unavailable")
+            if want("reply"):
+                _skip(report, "reply_agent",
+                      f"{why}: reply drafts deferred (inbox sync already done)", log)
+            if want("organize"):
+                _skip(report, "organizer", f"{why}: organize deferred", log)
+            if want("scout"):
+                _skip(report, "prospecting", f"{why}: scout deferred", log)
+            if want("bounce"):
+                _skip(report, "bounce_retry", f"{why}: bounce research deferred", log)
+            if stage == "followup" or (stage is None and config.COLD_FOLLOWUPS_ENABLED):
+                _skip(report, "followups", f"{why}: follow-ups deferred", log)
+            status.update(detail=f"{why}. Inbox sync still ran.")
+        else:
+            if want("reply"):
+                guarded("reply agent", lambda: reply_agent.run(
+                    contacts, report, args.cap or config.NUDGE_DAILY_CAP, log,
                     dry_run=args.dry_run))
-            else:
-                _skip(report, "bounce_retry",
-                      f"meter {status.budget_pct():.0f}% — bounce deferred", log)
 
-        if stage == "followup" or (stage is None and config.COLD_FOLLOWUPS_ENABLED):
-            guarded("cold follow-ups", lambda: followups.run(
-                contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log,
-                dry_run=args.dry_run))
+            if want("organize"):
+                if status.meter_allows(config.ORGANIZE_METER_MAX_PCT):
+                    guarded("organizer", lambda: organizer.run(
+                        contacts, report, log, dry_run=args.dry_run))
+                else:
+                    _skip(report, "organizer",
+                          f"meter {status.budget_pct():.0f}% — organize deferred", log)
+
+            scout_ran = False
+            if want("scout"):
+                waiting = organizer.waiting_count()
+                skip_reason = None
+                # Full-run only: prefer draining briefs over mining more
+                if stage is None and waiting >= config.SCOUT_SKIP_IF_BRIEFS_WAITING:
+                    skip_reason = (f"skipping scout: {waiting} briefs waiting "
+                                   f"(≥{config.SCOUT_SKIP_IF_BRIEFS_WAITING})")
+                elif not status.meter_allows(config.SCOUT_METER_MAX_PCT):
+                    skip_reason = (f"skipping scout: meter {status.budget_pct():.0f}% "
+                                   f"(gate {config.SCOUT_METER_MAX_PCT * 100:.0f}%)")
+                elif not llm.available():
+                    skip_reason = "skipping scout: Claude unavailable"
+                if skip_reason:
+                    _skip(report, "prospecting", skip_reason, log)
+                else:
+                    guarded("scout agent", lambda: prospecting.run(
+                        contacts, report, args.cap, log, dry_run=args.dry_run))
+                    scout_ran = True
+
+            # Second organize pass after scout produced new briefs
+            if scout_ran and want("organize"):
+                if llm.available() and status.meter_allows(config.ORGANIZE_METER_MAX_PCT):
+                    guarded("organizer", lambda: organizer.run(
+                        contacts, report, log, dry_run=args.dry_run))
+                else:
+                    _skip(report, "organizer",
+                          f"meter {status.budget_pct():.0f}% — post-scout organize deferred", log)
+
+            if want("bounce"):
+                if llm.available() and status.meter_allows(config.BOUNCE_METER_MAX_PCT):
+                    guarded("bounce retry", lambda: bounce_retry.run(
+                        contacts, report, args.cap or config.BOUNCE_DAILY_CAP, log,
+                        dry_run=args.dry_run))
+                else:
+                    _skip(report, "bounce_retry",
+                          f"meter {status.budget_pct():.0f}% — bounce deferred", log)
+
+            if stage == "followup" or (stage is None and config.COLD_FOLLOWUPS_ENABLED):
+                if llm.available():
+                    guarded("cold follow-ups", lambda: followups.run(
+                        contacts, report, args.cap or config.FOLLOWUP_DAILY_CAP, log,
+                        dry_run=args.dry_run))
+                else:
+                    _skip(report, "followups", "Claude unavailable: follow-ups deferred", log)
 
         status.update(stage="digest", detail="writing digest + dashboard")
         path, summary = digest.run(contacts, report, llm.calls_made(), dry_run=args.dry_run)

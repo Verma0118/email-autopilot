@@ -77,18 +77,18 @@ function ContextBlock({ item }) {
       <details className="context" open>
         <summary>Bounce fix</summary>
         <div className="ctx-body">
-          <strong>Email</strong> · {oldEmail || "?"} → {newEmail || "?"}
+          <strong>Email</strong> {oldEmail || "?"} → {newEmail || "?"}
         </div>
       </details>
     );
   }
   if (item.kind === "outreach") {
     const parts = [];
-    if (m.role) parts.push(<span key="role"><strong>Role</strong> · {m.role}</span>);
+    if (m.role) parts.push(<span key="role"><strong>Role</strong> {m.role}</span>);
     if (m.linkedin) {
       parts.push(
         <span key="li">
-          <strong>LinkedIn</strong> ·{" "}
+          <strong>LinkedIn</strong>{" "}
           <a href={m.linkedin} target="_blank" rel="noopener">Open LinkedIn</a>
         </span>
       );
@@ -96,7 +96,7 @@ function ContextBlock({ item }) {
     if (m.attachments && m.attachments.length) {
       parts.push(
         <span key="att">
-          <strong>Attachments</strong> · {m.attachments.join(", ")}
+          <strong>Attachments</strong> {m.attachments.join(", ")}
           <span className="att-note"> (if file is in assets/)</span>
         </span>
       );
@@ -104,13 +104,13 @@ function ContextBlock({ item }) {
     if (m.is_uiuc_alum != null) {
       parts.push(
         <span key="alum">
-          <strong>Alum</strong> · {m.is_uiuc_alum ? "UIUC alum" : "Not UIUC alum"}
+          <strong>Alum</strong> {m.is_uiuc_alum ? "UIUC alum" : "Not UIUC alum"}
         </span>
       );
     }
-    if (m.company_signal) parts.push(<span key="sig"><strong>Signal</strong> · {m.company_signal}</span>);
-    if (m.hooks) parts.push(<span key="hooks"><strong>Hooks</strong><br />{String(m.hooks).replace(/\n/g, " · ")}</span>);
-    if (m.email_basis) parts.push(<span key="basis"><strong>Email basis</strong> · {m.email_basis}</span>);
+    if (m.company_signal) parts.push(<span key="sig"><strong>Signal</strong> {m.company_signal}</span>);
+    if (m.hooks) parts.push(<span key="hooks"><strong>Hooks</strong><br />{String(m.hooks).replace(/\n/g, "; ")}</span>);
+    if (m.email_basis) parts.push(<span key="basis"><strong>Email basis</strong> {m.email_basis}</span>);
     if (m.brief_file) parts.push(
       <a key="brief" href={"/brief/" + encodeURIComponent(m.brief_file)}>Full brief</a>
     );
@@ -119,7 +119,7 @@ function ContextBlock({ item }) {
       <details className="context">
         <summary>Research context</summary>
         <div className="ctx-body">
-          {parts.map((p, i) => <span key={i}>{i > 0 && <br />}{p}</span>)}
+          {parts.map((p, i) => <div key={i}>{p}</div>)}
         </div>
       </details>
     );
@@ -205,6 +205,11 @@ function QueueItem({
 
   const previewHtml = sanitizeHtml(item.body_html);
   const kindLabel = KIND_LABELS[item.kind] || item.kind;
+  const teaser = String(item.body_html || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 110);
 
   return (
     <li
@@ -222,68 +227,74 @@ function QueueItem({
         <span className="sub">{item.company}</span>
       </div>
       {item.why && <p className="q-why">{item.why}</p>}
-      <ContextBlock item={item} />
-      {threadHref && (
-        <a className="thread-link" href={threadHref} target="_blank" rel="noopener">
-          Open thread in Gmail
-        </a>
-      )}
-      <div className="q-fields">
-        <div>
-          <label htmlFor={`email-${item.id}`}>To</label>
-          <input
-            ref={emailRef}
-            className="email-edit"
-            id={`email-${item.id}`}
-            type="email"
-            defaultValue={item.email || ""}
-            autoComplete="off"
-            onChange={scheduleSave}
-          />
-        </div>
-        <div>
-          <label htmlFor={`subj-${item.id}`}>Subject</label>
-          <input
-            ref={subjectRef}
-            className="subj-edit"
-            id={`subj-${item.id}`}
-            defaultValue={item.subject || ""}
-            onChange={scheduleSave}
-          />
-        </div>
-      </div>
+      {!focused && teaser && <p className="body-teaser">{teaser}{teaser.length >= 110 ? "…" : ""}</p>}
 
-      {!editing && (
-        <div
-          className="body-preview"
-          dangerouslySetInnerHTML={{ __html: previewHtml || "<p><em>Empty body</em></p>" }}
-        />
-      )}
+      {focused && (
+        <>
+          <ContextBlock item={item} />
+          {threadHref && (
+            <a className="thread-link" href={threadHref} target="_blank" rel="noopener">
+              Open thread in Gmail
+            </a>
+          )}
+          <div className="q-fields">
+            <div>
+              <label htmlFor={`email-${item.id}`}>To</label>
+              <input
+                ref={emailRef}
+                className="email-edit"
+                id={`email-${item.id}`}
+                type="email"
+                defaultValue={item.email || ""}
+                autoComplete="off"
+                onChange={scheduleSave}
+              />
+            </div>
+            <div>
+              <label htmlFor={`subj-${item.id}`}>Subject</label>
+              <input
+                ref={subjectRef}
+                className="subj-edit"
+                id={`subj-${item.id}`}
+                defaultValue={item.subject || ""}
+                onChange={scheduleSave}
+              />
+            </div>
+          </div>
 
-      <details
-        ref={detailsRef}
-        className="preview"
-        onToggle={(ev) => {
-          if (ev.currentTarget.open !== editing) onToggleEdit(ev.currentTarget.open);
-        }}
-      >
-        <summary>{editing ? "Editing body" : "Edit email body"}</summary>
-        <div
-          ref={bodyRef}
-          className="body-edit"
-          contentEditable
-          suppressContentEditableWarning
-          spellCheck
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
-          onInput={scheduleSave}
-          onPaste={(ev) => {
-            ev.preventDefault();
-            const text = (ev.clipboardData || window.clipboardData).getData("text/plain");
-            document.execCommand("insertText", false, text);
-          }}
-        />
-        <p className="edit-hint">Paste is plain text. Edits autosave; Approve creates the Gmail draft.</p>
-      </details>
+          {!editing && (
+            <div
+              className="body-preview"
+              dangerouslySetInnerHTML={{ __html: previewHtml || "<p><em>Empty body</em></p>" }}
+            />
+          )}
+
+          <details
+            ref={detailsRef}
+            className="preview"
+            onToggle={(ev) => {
+              if (ev.currentTarget.open !== editing) onToggleEdit(ev.currentTarget.open);
+            }}
+          >
+            <summary>{editing ? "Editing body" : "Edit email body"}</summary>
+            <div
+              ref={bodyRef}
+              className="body-edit"
+              contentEditable
+              suppressContentEditableWarning
+              spellCheck
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+              onInput={scheduleSave}
+              onPaste={(ev) => {
+                ev.preventDefault();
+                const text = (ev.clipboardData || window.clipboardData).getData("text/plain");
+                document.execCommand("insertText", false, text);
+              }}
+            />
+            <p className="edit-hint">Paste is plain text. Edits autosave; Approve creates the Gmail draft.</p>
+          </details>
+        </>
+      )}
 
       <div className="q-actions">
         <button
@@ -291,16 +302,19 @@ function QueueItem({
           className="btn btn-good approve"
           onClick={(ev) => handleApprove(ev.currentTarget, { confirm: false })}
         >
-          Approve → Gmail draft
+          Approve
         </button>
-        <span className="skip-menu">
-          <button type="button" onClick={() => handleSkip(3)}>Skip 3d</button>
-          <button type="button" onClick={() => handleSkip(7)}>Skip 7d</button>
-          <button type="button" onClick={() => handleSkip("forever")}>Skip ∞</button>
-        </span>
-        <button type="button" className="btn btn-quiet skip" onClick={handleCopy}>
-          Copy body
+        <button type="button" className="btn btn-quiet skip" onClick={() => handleSkip(7)}>
+          Skip 7 days
         </button>
+        <details className="more-actions">
+          <summary>More</summary>
+          <div className="more-actions-menu">
+            <button type="button" onClick={() => handleSkip(3)}>Skip 3 days</button>
+            <button type="button" onClick={() => handleSkip("forever")}>Skip forever</button>
+            <button type="button" onClick={handleCopy}>Copy body</button>
+          </div>
+        </details>
       </div>
     </li>
   );
@@ -319,19 +333,8 @@ export default function Approvals({
   const sorted = sortQueue(queue);
   const filtered = filterQueue(sorted, filter, trackFilter, search);
 
-  const nReply = sorted.filter(i => i.kind === "reply").length;
-  const nBounce = sorted.filter(i => i.kind === "bounce").length;
-  const nFollowup = sorted.filter(i => i.kind === "followup").length;
   const nOut = sorted.filter(i => i.kind === "outreach").length;
   const hasOutreach = nOut > 0;
-  const splitLabel = sorted.length
-    ? [
-        (nReply ? nReply + " repl" + (nReply === 1 ? "y" : "ies") : ""),
-        (nBounce ? nBounce + " bounce" : ""),
-        (nFollowup ? nFollowup + " follow-up" : ""),
-        (nOut ? nOut + " outreach" : ""),
-      ].filter(Boolean).join(" · ")
-    : "";
 
   function setFocus(i) {
     const idx = Math.max(0, Math.min(i, filtered.length - 1));
@@ -364,7 +367,7 @@ export default function Approvals({
         {bits.join(" ")}{" "}
         <a href={link} target="_blank" rel="noopener">Open in Gmail</a>
         {" · "}
-        <button className="linkish" onClick={() => handleUndo(id)}>Undo</button>
+        <button type="button" className="linkish" onClick={() => handleUndo(id)}>Undo</button>
       </span>
     );
     advanceAfterRemove(id);
@@ -383,7 +386,7 @@ export default function Approvals({
   async function handleUndo(id) {
     const { ok, data } = await postUndo(id);
     if (ok) {
-      addToast(data.undid === "approved" ? "Approval undone — draft deleted" : "Restored to queue");
+      addToast(data.undid === "approved" ? "Approval undone. Draft deleted." : "Restored to queue.");
       await Promise.all([refreshQueue(), refreshHistory()]);
     } else {
       addToast(data.error || "Could not undo");
@@ -396,7 +399,7 @@ export default function Approvals({
       await onRunStage("triage");
     } else {
       const res = await postRun("triage");
-      if (res.ok) addToast("Triage run started");
+      if (res.ok) addToast("Check email started");
       else addToast(res.status === 409 ? "Already running" : "Could not start run");
     }
   }
@@ -452,23 +455,38 @@ export default function Approvals({
   }, [focusIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const searching = search || filter !== "all" || trackFilter;
+  const showFilters = sorted.length >= 4 || searching;
+  const showTrackChips = hasOutreach && nOut >= 3;
 
   return (
     <>
       <div className="section-head">
-        <h2>Approvals <span className="qsplit">{splitLabel}</span></h2>
-        <p className="hint">
-          <span className="kbd">j</span>/<span className="kbd">k</span> move · <span className="kbd">a</span> approve · <span className="kbd">?</span> help
-        </p>
+        <h2>
+          Inbox
+          {sorted.length > 0 && (
+            <span className="qsplit">{sorted.length} to review</span>
+          )}
+        </h2>
+        {sorted.length > 0 && (
+          <p className="hint">
+            <span className="kbd">j</span>/<span className="kbd">k</span> · <span className="kbd">a</span> approve · <span className="kbd">s</span> skip
+          </p>
+        )}
       </div>
-
-      {needsCount > 0 && (
-        <p className="urgency-banner">
-          <span>{needsCount} item{needsCount === 1 ? "" : "s"} need you on Overview</span>
-          <button type="button" onClick={onShowOverview}>Overview →</button>
+      {sorted.length > 0 && (
+        <p className="section-lede">
+          Select a draft, review, Approve. Creates a Gmail draft only. Nothing sends.
         </p>
       )}
 
+      {needsCount > 0 && sorted.length === 0 && (
+        <p className="urgency-banner">
+          <span>{needsCount} item{needsCount === 1 ? "" : "s"} on Status need a look</span>
+          <button type="button" onClick={onShowOverview}>Open Status</button>
+        </p>
+      )}
+
+      {showFilters && (
       <div className="filters" id="qfilters">
         {FILTERS.map(f => (
           <button
@@ -480,7 +498,7 @@ export default function Approvals({
             {f.label}
           </button>
         ))}
-        {hasOutreach && (
+        {showTrackChips && (
           <span className="track-filters" aria-label="Track filters">
             {TRACK_CHIPS.map(t => (
               <button
@@ -498,30 +516,32 @@ export default function Approvals({
           className="qsearch"
           id="qsearch"
           type="search"
-          placeholder="Search name, company…"
+          placeholder="Search…"
           autoComplete="off"
           value={search}
           onChange={ev => setSearch(ev.target.value.trim().toLowerCase())}
           onKeyDown={ev => { if (ev.key === "Escape") ev.currentTarget.blur(); }}
         />
       </div>
+      )}
 
       <ul className="queue-list" id="queue">
         {filtered.length === 0 ? (
-          <li className="empty">
+          <li className="empty calm">
             {searching ? (
-              <><strong>No matches</strong>Try another filter or clear search.</>
+              <><strong>No matches</strong>Try clearing search.</>
             ) : (
               <>
-                <strong>Nothing waiting</strong>
-                Run triage to sync inbox and draft replies.
-                <br />
+                <strong>Inbox clear</strong>
+                <span className="empty-body">
+                  Nothing waiting. Check email to sync inbox and draft anything new.
+                </span>
                 <button
                   type="button"
                   className="btn btn-primary cta"
                   onClick={startTriage}
                 >
-                  Start Triage
+                  Check email
                 </button>
               </>
             )}
@@ -552,25 +572,25 @@ export default function Approvals({
             <li className="sub">Nothing resolved yet today.</li>
           ) : (
             history.map(it => {
-              const when = (it.resolved || "").slice(11, 16) || "—";
-              const who = `${it.name} · ${it.company}`;
+              const when = (it.resolved || "").slice(11, 16) || "";
+              const who = [it.name, it.company].filter(Boolean).join(", ");
               if (it.status === "approved") {
                 return (
                   <li key={it.id}>
-                    <span className="ok">Approved</span> {who} · {when}
+                    <span className="ok">Approved</span> {who}{when ? `, ${when}` : ""}
                     {it.draft_link && <> · <a href={it.draft_link} target="_blank" rel="noopener">Open draft</a></>}
                     {" · "}
-                    <button className="linkish" onClick={() => handleUndo(it.id)}>Undo</button>
+                    <button type="button" className="linkish" onClick={() => handleUndo(it.id)}>Undo</button>
                   </li>
                 );
               }
-              const snooze = it.skip_until === "forever" ? " · forever"
-                : (it.skip_until ? " · until " + it.skip_until : "");
+              const snooze = it.skip_until === "forever" ? ", forever"
+                : (it.skip_until ? ", until " + it.skip_until : "");
               return (
                 <li key={it.id}>
-                  <span className="skiplabel">Skipped</span> {who}{snooze} · {when}
+                  <span className="skiplabel">Skipped</span> {who}{snooze}{when ? `, ${when}` : ""}
                   {" · "}
-                  <button className="linkish" onClick={() => handleUndo(it.id)}>Undo</button>
+                  <button type="button" className="linkish" onClick={() => handleUndo(it.id)}>Undo</button>
                 </li>
               );
             })

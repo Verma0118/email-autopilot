@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getQueue, getHistory, getStatus, getReport, getVersion, postRun } from "./api.js";
+import { getQueue, getHistory, getStatus, getReport, getVersion, postRun, postStop, postUpdate } from "./api.js";
 import Chrome from "./components/Chrome.jsx";
+import RunBanner from "./components/RunBanner.jsx";
 import Approvals from "./components/Approvals.jsx";
 import Overview from "./components/Overview.jsx";
 import Activity from "./components/Activity.jsx";
 import HelpOverlay from "./components/HelpOverlay.jsx";
 import Toasts from "./components/Toasts.jsx";
+import { prettyStage } from "./pipeline.js";
 
 const VALID_TABS = ["approvals", "overview", "activity"];
 
@@ -17,26 +19,26 @@ function getInitialTab() {
   return "approvals";
 }
 
-function buildCostHint(tokPct, briefsN, limitHit, hardPct = 60) {
+function buildCostHint(tokPct, briefsN, limitHit, hardPct = 50) {
   if (limitHit) {
-    return { short: "Paused — wait for reset", text: "Claude session limit hit. Wait, then run Triage." };
+    return { short: "Paused, wait for reset", text: "Claude session limit hit. Wait, then Check email." };
   }
   if (tokPct >= hardPct) {
     return {
-      short: `Cap ${Math.round(hardPct)}% — LLM stopped`,
-      text: `Autopilot hit its ${Math.round(hardPct)}% token cap. Non-LLM work only until the window resets.`,
+      short: `Cap ${Math.round(hardPct)}%, LLM stopped`,
+      text: `Autopilot hit its ${Math.round(hardPct)}% token cap. Inbox sync still works; drafts wait until the window resets.`,
     };
   }
-  if (tokPct >= 45) {
+  if (tokPct >= 32) {
     return {
-      short: `Meter ${Math.round(tokPct)}% — skip Scout`,
-      text: `Autopilot meter at ${Math.round(tokPct)}% (cap ${Math.round(hardPct)}%). Run Organize or Triage instead of Scout.`,
+      short: `Meter ${Math.round(tokPct)}%, skip Scout`,
+      text: `Meter at ${Math.round(tokPct)}% (cap ${Math.round(hardPct)}%). Prefer Check email or Organize; Scout stays off above 32%.`,
     };
   }
   if (briefsN >= 2) {
     return {
-      short: `${briefsN} briefs — Organize`,
-      text: `${briefsN} briefs waiting. Run Organize before Scout.`,
+      short: `${briefsN} briefs, Organize`,
+      text: `${briefsN} briefs waiting. Organize from the Check email menu before Scout.`,
     };
   }
   return null;
@@ -44,14 +46,14 @@ function buildCostHint(tokPct, briefsN, limitHit, hardPct = 60) {
 
 export default function App() {
   const [tab, setTab] = useState(getInitialTab);
-  const [status, setStatus] = useState({ running: false, stage: "idle", detail: "—", tokens: {}, events: [] });
+  const [status, setStatus] = useState({ running: false, stage: "idle", detail: "idle", tokens: {}, events: [] });
   const [queue, setQueue] = useState([]);
   const [resolvedHistory, setResolvedHistory] = useState([]);
   const [report, setReport] = useState({ needs_you: [], needs_n: 0, briefs_waiting: [], errors: [] });
   const [buildHead, setBuildHead] = useState("…");
   const [helpOpen, setHelpOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
-  const [runMode, setRunMode] = useState("");
+  const [runMode, setRunMode] = useState("triage");
 
   const wasRunning = useRef(false);
   const toastId = useRef(0);
@@ -122,23 +124,14 @@ export default function App() {
     try {
       const s = await getStatus();
       setStatus(s);
-      if (!wasRunning.current && s.running) {
-        showTab("activity");
-      }
+      // Stay on the current tab when a run starts — banner covers progress.
+      // When a run finishes, always land on Inbox (Approvals) if there is work.
       if (wasRunning.current && !s.running) {
         refreshReport();
         const summary = s.detail || "Run finished";
-        addToast(
-          <span>
-            {summary} ·{" "}
-            <button className="linkish" onClick={() => showTab("overview")}>
-              Overview
-            </button>
-          </span>,
-          12000
-        );
+        addToast(summary, 10000);
         setQueue(prev => {
-          showTab(prev.length > 0 ? "approvals" : "overview");
+          showTab("approvals");
           return prev;
         });
         refreshQueue();
@@ -148,6 +141,13 @@ export default function App() {
       setStatus(prev => ({ ...prev, detail: "panel server unreachable" }));
     }
   }, [showTab, refreshReport, refreshQueue, addToast]);
+
+  const onStop = useCallback(async () => {
+    const res = await postStop();
+    if (!res.ok) { addToast("Could not stop"); return; }
+    addToast("Stop requested");
+    await pollStatus();
+  }, [addToast, pollStatus]);
 
   useEffect(() => {
     (async () => {
@@ -160,27 +160,29 @@ export default function App() {
 
       const hash = (location.hash || "").replace("#", "");
       if (!VALID_TABS.includes(hash) && hash !== "report") {
-        setQueue(q => {
-          setReport(r => {
-            const needsN = r.needs_n != null ? r.needs_n : (r.needs_you || []).length;
-            const briefsN = r.briefs_n || (r.briefs_waiting || []).length;
-            if (q.length) showTab("approvals");
-            else if (needsN + briefsN > 0) showTab("overview");
-            return r;
-          });
-          return q;
-        });
+        // Approvals (Inbox) is always home
+        showTab("approvals");
       }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const t1 = setInterval(pollStatus, 2000);
+    const interval = status.running ? 1000 : 2000;
+    const t1 = setInterval(pollStatus, interval);
     const t2 = setInterval(refreshQueue, 5000);
     const t3 = setInterval(refreshReport, 15000);
     const t4 = setInterval(refreshHistory, 20000);
     return () => { clearInterval(t1); clearInterval(t2); clearInterval(t3); clearInterval(t4); };
-  }, [pollStatus, refreshQueue, refreshReport, refreshHistory]);
+  }, [pollStatus, refreshQueue, refreshReport, refreshHistory, status.running]);
+
+  useEffect(() => {
+    const base = "EmailCRM Autopilot";
+    if (status.running) {
+      document.title = `Running · ${prettyStage(status.stage)} · ${base}`;
+    } else {
+      document.title = base;
+    }
+  }, [status.running, status.stage]);
 
   useEffect(() => {
     const onKey = (ev) => {
@@ -207,7 +209,18 @@ export default function App() {
 
   const tokens = status.tokens || {};
   const costHint = buildCostHint(
-    tokens.pct || 0, briefsN, !!tokens.limit_hit, tokens.hard_pct != null ? tokens.hard_pct : 60);
+    tokens.pct || 0, briefsN, !!tokens.limit_hit, tokens.hard_pct != null ? tokens.hard_pct : 50);
+
+  async function handleUpdate() {
+    addToast("Pulling latest from GitHub…");
+    const res = await postUpdate();
+    if (!res.ok || !res.data.ok) {
+      addToast(res.data.error || res.data.message || "Update failed. Check git on this Mac.");
+      return;
+    }
+    addToast(res.data.changed ? "Updated. Reloading panel…" : "Already latest. Reloading…");
+    setTimeout(() => location.reload(), 1400);
+  }
 
   return (
     <>
@@ -221,9 +234,18 @@ export default function App() {
         setRunMode={setRunMode}
         addToast={addToast}
         pollStatus={pollStatus}
-        costHint={costHint}
       />
-      <main>
+      {costHint?.text && !status.running && (
+        <div className="soft-banner" role="status">
+          <span>{costHint.text}</span>
+        </div>
+      )}
+      <RunBanner
+        status={status}
+        onStop={onStop}
+        onShowActivity={() => showTab("activity")}
+      />
+      <main className={status.running ? "is-live" : ""}>
         <div className={`panel${tab === "approvals" ? " active" : ""}`} id="panel-approvals" role="tabpanel">
           <Approvals
             queue={queue}
@@ -253,13 +275,17 @@ export default function App() {
         </div>
 
         <footer className="links">
-          <a href="https://verma0118.github.io/email-autopilot/" target="_blank" rel="noopener">Web dashboard</a> (encrypted, away-from-Mac) ·{" "}
-          <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Gmail drafts</a> ·{" "}
-          <a href="/dashboard" target="_blank" rel="noopener">Full report</a> ·{" "}
-          <a href="/files/digest" target="_blank" rel="noopener">Digest</a> ·{" "}
-          <a href="/files/prospects" target="_blank" rel="noopener">Briefs</a> ·{" "}
-          <a href="/files/logs" target="_blank" rel="noopener">Logs</a><br />
-          Scheduled run: daily 7:04 AM · panel <span id="build">{buildHead}</span> · click <strong>Update</strong> for latest (auto-reloads after pull)
+          <nav className="footer-nav" aria-label="Related links">
+            <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Gmail drafts</a>
+            <a href="/dashboard" target="_blank" rel="noopener">Full report</a>
+            <a href="/files/digest" target="_blank" rel="noopener">Digest</a>
+            <button type="button" className="linkish footer-update" onClick={handleUpdate}>
+              Update panel
+            </button>
+          </nav>
+          <p className="footer-meta">
+            Daily check at 7:04 AM · build <span id="build">{buildHead}</span>
+          </p>
         </footer>
       </main>
 
