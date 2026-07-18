@@ -1,20 +1,39 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getQueue, getHistory, getStatus, getReport, getVersion } from "./api.js";
+import { getQueue, getHistory, getStatus, getReport, getVersion, postRun } from "./api.js";
 import Chrome from "./components/Chrome.jsx";
 import Approvals from "./components/Approvals.jsx";
 import Overview from "./components/Overview.jsx";
 import Activity from "./components/Activity.jsx";
-import Report from "./components/Report.jsx";
 import HelpOverlay from "./components/HelpOverlay.jsx";
 import Toasts from "./components/Toasts.jsx";
 
-const VALID_TABS = ["approvals", "overview", "activity", "report"];
+const VALID_TABS = ["approvals", "overview", "activity"];
 
 function getInitialTab() {
   const hash = (location.hash || "").replace("#", "");
+  if (hash === "report") return "overview";
   if (VALID_TABS.includes(hash)) return hash;
   try { const t = localStorage.getItem("emailcrm-tab"); if (VALID_TABS.includes(t)) return t; } catch (_) {}
   return "approvals";
+}
+
+function buildCostHint(tokPct, briefsN, limitHit) {
+  if (limitHit) {
+    return { short: "Paused — wait for reset", text: "Claude session limit hit. Wait, then run Triage." };
+  }
+  if (tokPct >= 45) {
+    return {
+      short: `Meter ${Math.round(tokPct)}% — skip Scout`,
+      text: `Autopilot meter at ${Math.round(tokPct)}%. Run Organize or Triage instead of Scout.`,
+    };
+  }
+  if (briefsN >= 2) {
+    return {
+      short: `${briefsN} briefs — Organize`,
+      text: `${briefsN} briefs waiting. Run Organize before Scout.`,
+    };
+  }
+  return null;
 }
 
 export default function App() {
@@ -22,12 +41,11 @@ export default function App() {
   const [status, setStatus] = useState({ running: false, stage: "idle", detail: "—", tokens: {}, events: [] });
   const [queue, setQueue] = useState([]);
   const [resolvedHistory, setResolvedHistory] = useState([]);
-  const [report, setReport] = useState({ needs_you: [], needs_n: 0, gmail_drafts: [], briefs_waiting: [], errors: [], action_items: [] });
+  const [report, setReport] = useState({ needs_you: [], needs_n: 0, briefs_waiting: [], errors: [] });
   const [buildHead, setBuildHead] = useState("…");
   const [helpOpen, setHelpOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [runMode, setRunMode] = useState("");
-  const [dashKey, setDashKey] = useState(0);
 
   const wasRunning = useRef(false);
   const toastId = useRef(0);
@@ -50,17 +68,16 @@ export default function App() {
     try { window.history.replaceState(null, "", "#" + name); } catch (_) {}
   }, []);
 
-  // hash change support
   useEffect(() => {
     const onHash = () => {
       const h = (location.hash || "").replace("#", "");
-      if (VALID_TABS.includes(h)) setTab(h);
+      if (h === "report") showTab("overview");
+      else if (VALID_TABS.includes(h)) setTab(h);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  }, []);
+  }, [showTab]);
 
-  // keep URL hash in sync with active tab
   useEffect(() => {
     const cur = (location.hash || "").replace("#", "");
     if (cur !== tab) {
@@ -83,7 +100,18 @@ export default function App() {
     setReport(data);
   }, []);
 
-  // status poll
+  const onRunStage = useCallback(async (stage) => {
+    setRunMode(stage || "");
+    const res = await postRun(stage || null);
+    if (res.status === 409) { addToast("Already running"); return; }
+    if (!res.ok) { addToast("Could not start run"); return; }
+    const labels = {
+      "": "Full", triage: "Triage", organize: "Organize", scout: "Scout",
+      reply: "Reply", bounce: "Bounce", digest: "Digest",
+    };
+    addToast((labels[stage || ""] || "Run") + " started");
+  }, [addToast]);
+
   const pollStatus = useCallback(async () => {
     try {
       const s = await getStatus();
@@ -92,30 +120,29 @@ export default function App() {
         showTab("activity");
       }
       if (wasRunning.current && !s.running) {
-        setDashKey(k => k + 1);
         refreshReport();
         const summary = s.detail || "Run finished";
-        const toastContent = (
+        addToast(
           <span>
             {summary} ·{" "}
             <button className="linkish" onClick={() => showTab("overview")}>
               Overview
             </button>
-          </span>
+          </span>,
+          12000
         );
-        addToast(toastContent, 12000);
         setQueue(prev => {
           showTab(prev.length > 0 ? "approvals" : "overview");
           return prev;
         });
+        refreshQueue();
       }
       wasRunning.current = !!s.running;
     } catch (_) {
       setStatus(prev => ({ ...prev, detail: "panel server unreachable" }));
     }
-  }, [showTab, refreshReport, addToast]);
+  }, [showTab, refreshReport, refreshQueue, addToast]);
 
-  // initial load
   useEffect(() => {
     (async () => {
       await Promise.all([refreshQueue(), refreshReport(), refreshHistory()]);
@@ -125,17 +152,14 @@ export default function App() {
         if (v.head) setBuildHead(v.head);
       } catch (_) {}
 
-      // auto-select best tab if hash wasn't explicit
       const hash = (location.hash || "").replace("#", "");
-      if (!VALID_TABS.includes(hash)) {
+      if (!VALID_TABS.includes(hash) && hash !== "report") {
         setQueue(q => {
           setReport(r => {
             const needsN = r.needs_n != null ? r.needs_n : (r.needs_you || []).length;
-            const gmailN = (r.gmail_drafts || []).length;
             const briefsN = r.briefs_n || (r.briefs_waiting || []).length;
-            const overviewBadge = needsN + gmailN + briefsN;
             if (q.length) showTab("approvals");
-            else if (overviewBadge > 0) showTab("overview");
+            else if (needsN + briefsN > 0) showTab("overview");
             return r;
           });
           return q;
@@ -144,7 +168,6 @@ export default function App() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // polling intervals
   useEffect(() => {
     const t1 = setInterval(pollStatus, 2000);
     const t2 = setInterval(refreshQueue, 5000);
@@ -153,7 +176,6 @@ export default function App() {
     return () => { clearInterval(t1); clearInterval(t2); clearInterval(t3); clearInterval(t4); };
   }, [pollStatus, refreshQueue, refreshReport, refreshHistory]);
 
-  // keyboard shortcuts
   useEffect(() => {
     const onKey = (ev) => {
       if (ev.key === "Escape") {
@@ -168,22 +190,17 @@ export default function App() {
       if (key === "1") { showTab("approvals"); return; }
       if (key === "2") { showTab("overview"); return; }
       if (key === "3") { showTab("activity"); return; }
-      if (key === "4") { showTab("report"); return; }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [helpOpen, showTab]);
 
   const needsCount = report.needs_n != null ? report.needs_n : (report.needs_you || []).length;
-  const gmailN = (report.gmail_drafts || []).length;
   const briefsN = report.briefs_n != null ? report.briefs_n : (report.briefs_waiting || []).length;
-  const overviewBadge = needsCount + gmailN + briefsN;
+  const overviewBadge = needsCount + briefsN;
 
   const tokens = status.tokens || {};
-  const tokPct = tokens.pct || 0;
-  let costHint = null;
-  if (tokPct >= 45) costHint = "Scout costly";
-  else if (briefsN >= 2) costHint = "Organize suggested";
+  const costHint = buildCostHint(tokens.pct || 0, briefsN, !!tokens.limit_hit);
 
   return (
     <>
@@ -196,10 +213,7 @@ export default function App() {
         runMode={runMode}
         setRunMode={setRunMode}
         addToast={addToast}
-        refreshQueue={refreshQueue}
-        refreshReport={refreshReport}
         pollStatus={pollStatus}
-        showTab={showTab}
         costHint={costHint}
       />
       <main>
@@ -213,6 +227,7 @@ export default function App() {
             refreshQueue={refreshQueue}
             refreshHistory={refreshHistory}
             setRunMode={setRunMode}
+            onRunStage={onRunStage}
           />
         </div>
         <div className={`panel${tab === "overview" ? " active" : ""}`} id="panel-overview" role="tabpanel">
@@ -220,25 +235,20 @@ export default function App() {
             status={status}
             report={report}
             refreshReport={refreshReport}
-            addToast={addToast}
-            setRunMode={setRunMode}
-            onRunOrganize={() => {
-              setRunMode("organize");
-              document.getElementById("chrome-run-btn")?.click();
-            }}
-            onShowReport={() => showTab("report")}
+            queueCount={queue.length}
+            onRunStage={onRunStage}
+            onShowApprovals={() => showTab("approvals")}
+            onShowReport={() => window.open("/dashboard", "_blank", "noopener")}
           />
         </div>
         <div className={`panel${tab === "activity" ? " active" : ""}`} id="panel-activity" role="tabpanel">
           <Activity status={status} />
         </div>
-        <div className={`panel${tab === "report" ? " active" : ""}`} id="panel-report" role="tabpanel">
-          <Report dashKey={dashKey} />
-        </div>
 
         <footer className="links">
           <a href="https://verma0118.github.io/email-autopilot/" target="_blank" rel="noopener">Web dashboard</a> (encrypted, away-from-Mac) ·{" "}
           <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Gmail drafts</a> ·{" "}
+          <a href="/dashboard" target="_blank" rel="noopener">Full report</a> ·{" "}
           <a href="/files/digest" target="_blank" rel="noopener">Digest</a> ·{" "}
           <a href="/files/prospects" target="_blank" rel="noopener">Briefs</a> ·{" "}
           <a href="/files/logs" target="_blank" rel="noopener">Logs</a><br />

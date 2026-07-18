@@ -1,32 +1,49 @@
+import { useState, useRef, useEffect } from "react";
 import { postRun, postStop, postUpdate } from "../api.js";
 
-const MODES = [
+const PRIMARY_MODES = [
   { label: "Full", stage: "" },
   { label: "Triage", stage: "triage" },
+  { label: "Organize", stage: "organize" },
+  { label: "Scout", stage: "scout" },
+];
+
+const MORE_MODES = [
   { label: "Reply", stage: "reply" },
   { label: "Bounce", stage: "bounce" },
-  { label: "Scout", stage: "scout" },
-  { label: "Organize", stage: "organize" },
   { label: "Digest", stage: "digest" },
 ];
 
+const ALL_MODES = [...PRIMARY_MODES, ...MORE_MODES];
+
+function modeLabel(stage) {
+  return ALL_MODES.find(m => m.stage === stage)?.label || "Full";
+}
+
 export default function Chrome({
   tab, onTabChange, status, queueBadge, overviewBadge,
-  runMode, setRunMode, addToast, refreshQueue, refreshReport,
-  pollStatus, showTab, costHint,
+  runMode, setRunMode, addToast, pollStatus, costHint,
 }) {
   const running = !!status.running;
-  const stageLabel = running ? (status.stage || "running") : "idle";
-  const stageChip = running
-    ? stageLabel + (status.detail ? " · " + status.detail : "")
-    : "idle";
+  const stageOnly = running ? (status.stage || "running") : "idle";
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef(null);
+  const moreSelected = MORE_MODES.some(m => m.stage === runMode);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDoc = (ev) => {
+      if (moreRef.current && !moreRef.current.contains(ev.target)) setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [moreOpen]);
 
   async function handleRun() {
     const res = await postRun(runMode || null);
     if (res.status === 409) { addToast("Already running"); return; }
     if (!res.ok) { addToast("Could not start run"); return; }
-    const label = MODES.find(m => m.stage === runMode)?.label || "Full";
-    addToast(label + " run started");
+    addToast(modeLabel(runMode) + " run started");
     await pollStatus();
   }
 
@@ -55,12 +72,17 @@ export default function Chrome({
           <div className="brand">
             <span className={`dot${running ? " live" : ""}`} aria-hidden="true" />
             <h1>EmailCRM</h1>
-            <span className="stagechip">{stageChip}</span>
+            <span
+              className="stagechip"
+              title={running ? (status.detail || stageOnly) : "idle"}
+            >
+              {stageOnly}
+            </span>
           </div>
           <div className="actions">
             <span className="chrome-label">Mode</span>
             <div className="run-modes" title="What to run" aria-label="Run mode">
-              {MODES.map(m => (
+              {PRIMARY_MODES.map(m => (
                 <button
                   key={m.stage || "full"}
                   type="button"
@@ -70,8 +92,42 @@ export default function Chrome({
                   {m.label}
                 </button>
               ))}
+              <div className="mode-more" ref={moreRef}>
+                <button
+                  type="button"
+                  className={`chip more-trigger${moreSelected ? " active" : ""}`}
+                  aria-expanded={moreOpen}
+                  aria-haspopup="listbox"
+                  onClick={() => setMoreOpen(o => !o)}
+                >
+                  More{moreSelected ? ` · ${modeLabel(runMode)}` : ""}
+                </button>
+                {moreOpen && (
+                  <div className="mode-more-menu" role="listbox">
+                    {MORE_MODES.map(m => (
+                      <button
+                        key={m.stage}
+                        type="button"
+                        role="option"
+                        aria-selected={runMode === m.stage}
+                        className={runMode === m.stage ? "active" : ""}
+                        onClick={() => {
+                          setRunMode(m.stage);
+                          setMoreOpen(false);
+                        }}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            {costHint && <span className="cost-hint">{costHint}</span>}
+            {costHint?.text && (
+              <span className="cost-hint" title={costHint.text}>
+                {costHint.short || costHint.text}
+              </span>
+            )}
             <button
               id="chrome-run-btn"
               type="button"
@@ -104,7 +160,6 @@ export default function Chrome({
             { id: "approvals", label: "Approvals", badge: queueBadge },
             { id: "overview", label: "Overview", badge: overviewBadge },
             { id: "activity", label: "Activity", badge: 0 },
-            { id: "report", label: "Report", badge: 0 },
           ].map(t => (
             <button
               key={t.id}

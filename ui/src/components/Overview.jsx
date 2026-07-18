@@ -1,6 +1,60 @@
 import { postDismiss } from "../api.js";
 
-export default function Overview({ status, report, refreshReport, addToast, setRunMode, onRunOrganize, onShowReport }) {
+function suggestNext({ tokPct, briefsN, needsN, queueN, running, limitHit }) {
+  if (running) return null;
+  if (limitHit) {
+    return {
+      title: "Session paused",
+      body: "Claude hit a session limit. Wait for reset, then run Triage.",
+      stage: "triage",
+      label: "Run Triage",
+    };
+  }
+  if (queueN > 0) {
+    return {
+      title: "Clear Approvals first",
+      body: `${queueN} draft${queueN === 1 ? "" : "s"} waiting — review before starting another run.`,
+      stage: null,
+      label: null,
+      goApprovals: true,
+    };
+  }
+  if (briefsN >= 2) {
+    return {
+      title: "Organize waiting briefs",
+      body: `${briefsN} prospect briefs are ready — cheaper than Scout.`,
+      stage: "organize",
+      label: "Run Organize",
+    };
+  }
+  if (needsN > 0 || tokPct < 45) {
+    return {
+      title: "Clear inbox debt",
+      body: "Sync inbox, draft replies, and fix bounces.",
+      stage: "triage",
+      label: "Run Triage",
+    };
+  }
+  if (tokPct >= 45) {
+    return {
+      title: "Meter is mid-range",
+      body: `Autopilot meter at ${Math.round(tokPct)}% — prefer Triage or Organize over Scout.`,
+      stage: "triage",
+      label: "Run Triage",
+    };
+  }
+  return {
+    title: "Ready for a Full run",
+    body: "Inbox looks quiet and the meter has room.",
+    stage: "",
+    label: "Run Full",
+  };
+}
+
+export default function Overview({
+  status, report, refreshReport, queueCount = 0,
+  onRunStage, onShowApprovals, onShowReport,
+}) {
   const tokens = status.tokens || {};
   const tokPct = tokens.pct || 0;
   const tokClass = tokens.limit_hit || tokPct >= 100 ? " bad" : (tokPct >= 60 ? " warn" : "");
@@ -20,18 +74,24 @@ export default function Overview({ status, report, refreshReport, addToast, setR
   const normNeeds = needsItems.map(it => typeof it === "string" ? { id: it, text: it, href: null } : it);
   const needsN = report.needs_n != null ? report.needs_n : normNeeds.length;
 
-  const gmailDrafts = report.gmail_drafts || [];
   const briefs = report.briefs_waiting || [];
   const briefsN = report.briefs_n != null ? report.briefs_n : briefs.length;
-  const actionItems = report.action_items || [];
   const errors = report.errors || [];
+
+  const suggestion = suggestNext({
+    tokPct,
+    briefsN,
+    needsN,
+    queueN: queueCount,
+    running: !!status.running,
+    limitHit: !!tokens.limit_hit,
+  });
 
   async function handleDismiss(id) {
     await postDismiss(id);
     await refreshReport();
   }
 
-  // parse errors into groups
   const marked = [];
   const limits = [];
   const other = [];
@@ -75,6 +135,33 @@ export default function Overview({ status, report, refreshReport, addToast, setR
         </div>
       </div>
 
+      {suggestion && (
+        <div className="next-run">
+          <div>
+            <p className="label">Suggested next</p>
+            <p className="next-title">{suggestion.title}</p>
+            <p className="sub">{suggestion.body}</p>
+          </div>
+          <div className="next-actions">
+            {suggestion.goApprovals && (
+              <button type="button" className="btn btn-primary btn-sm" onClick={onShowApprovals}>
+                Open Approvals →
+              </button>
+            )}
+            {suggestion.label && suggestion.stage !== null && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={!!status.running}
+                onClick={() => onRunStage(suggestion.stage)}
+              >
+                {suggestion.label}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="stack" style={{ marginTop: 18 }}>
         {needsN > 0 && (
           <div className="needs">
@@ -84,50 +171,29 @@ export default function Overview({ status, report, refreshReport, addToast, setR
             </h3>
             <ul>
               {normNeeds.slice(0, 10).map(it => {
-                const isMailto = String(it.href || "").startsWith("mailto:");
-                const linkLabel = isMailto ? "Email them" : "Open in Gmail";
+                const href = it.href || "";
+                const isMailto = href.startsWith("mailto:");
+                const isHash = href.startsWith("/#") || href.startsWith("#");
+                let linkLabel = "Open";
+                if (isMailto) linkLabel = "Email them";
+                else if (href.includes("mail.google")) linkLabel = "Open in Gmail";
+                else if (isHash || href.includes("approvals")) linkLabel = "Open Approvals";
                 return (
                   <li key={it.id}>
                     <div>{it.text}</div>
                     <div className="row-actions">
-                      {it.href && (
-                        <a href={it.href} target="_blank" rel="noopener">{linkLabel}</a>
+                      {href && (
+                        isHash ? (
+                          <button type="button" onClick={() => {
+                            if (href.includes("approvals")) onShowApprovals();
+                            else onShowReport();
+                          }}>{linkLabel}</button>
+                        ) : (
+                          <a href={href} target="_blank" rel="noopener">{linkLabel}</a>
+                        )
                       )}
                       <button type="button" onClick={() => handleDismiss(it.id)}>Dismiss</button>
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-            <a className="go" href="#report" onClick={ev => { ev.preventDefault(); onShowReport(); }}>
-              Full report →
-            </a>
-          </div>
-        )}
-
-        {gmailDrafts.length > 0 && (
-          <div className="gmail-drafts">
-            <h3>
-              Review in Gmail{" "}
-              <span className="badge" data-n={String(gmailDrafts.length)}>{gmailDrafts.length}</span>
-            </h3>
-            <ul>
-              {gmailDrafts.slice(0, 12).map((d, i) => {
-                const link = d.href
-                  ? <a href={d.href} target="_blank" rel="noopener">Open draft</a>
-                  : <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener">Gmail drafts</a>;
-                return (
-                  <li key={i}>
-                    <div>{d.text}</div>
-                    <div className="row-actions">{link}</div>
-                    {d.body && (
-                      <details>
-                        <summary>Preview</summary>
-                        <pre style={{ marginTop: 6, fontSize: "0.78rem", whiteSpace: "pre-wrap" }}>
-                          {d.body.slice(0, 400)}{d.body.length > 400 ? "…" : ""}
-                        </pre>
-                      </details>
-                    )}
                   </li>
                 );
               })}
@@ -164,19 +230,11 @@ export default function Overview({ status, report, refreshReport, addToast, setR
               type="button"
               className="btn btn-primary btn-sm"
               style={{ marginTop: 12 }}
-              onClick={onRunOrganize}
+              disabled={!!status.running}
+              onClick={() => onRunStage("organize")}
             >
               Run Organize →
             </button>
-          </div>
-        )}
-
-        {actionItems.length > 0 && (
-          <div className="needs">
-            <h3>Inbox action items</h3>
-            <ul>
-              {actionItems.map((a, i) => <li key={i}>{a}</li>)}
-            </ul>
           </div>
         )}
 
@@ -198,6 +256,10 @@ export default function Overview({ status, report, refreshReport, addToast, setR
           <p className="label">Inbox rundown</p>
           <p className="rundown">{rundown}</p>
         </div>
+
+        <p className="report-link-row">
+          <a href="/dashboard" target="_blank" rel="noopener">Open full report ↗</a>
+        </p>
       </div>
     </>
   );

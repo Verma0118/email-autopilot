@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { postApprove, postSkip, postUndo, postSave } from "../api.js";
+import { postApprove, postSkip, postUndo, postSave, postRun } from "../api.js";
 
 const KIND_PRIORITY = { reply: 0, bounce: 1, followup: 2, outreach: 3 };
 
@@ -89,7 +89,7 @@ function ContextBlock({ item }) {
       parts.push(
         <span key="li">
           <strong>LinkedIn</strong> ·{" "}
-          <a href={m.linkedin} target="_blank" rel="noopener">{m.linkedin}</a>
+          <a href={m.linkedin} target="_blank" rel="noopener">Open LinkedIn</a>
         </span>
       );
     }
@@ -97,6 +97,7 @@ function ContextBlock({ item }) {
       parts.push(
         <span key="att">
           <strong>Attachments</strong> · {m.attachments.join(", ")}
+          <span className="att-note"> (if file is in assets/)</span>
         </span>
       );
     }
@@ -126,15 +127,23 @@ function ContextBlock({ item }) {
   return null;
 }
 
-function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, refreshQueue, refreshHistory }) {
+function QueueItem({
+  item, focused, onFocus, onApproved, onSkipped,
+  addToast, refreshQueue, refreshHistory, editing, onToggleEdit,
+}) {
   const subjectRef = useRef(null);
   const emailRef = useRef(null);
   const bodyRef = useRef(null);
   const saveTimer = useRef(null);
+  const detailsRef = useRef(null);
 
   const threadHref = item.thread_id
     ? ("https://mail.google.com/mail/u/0/#inbox/" + encodeURIComponent(item.thread_id))
     : "";
+
+  useEffect(() => {
+    if (detailsRef.current) detailsRef.current.open = !!editing;
+  }, [editing]);
 
   function scheduleSave() {
     clearTimeout(saveTimer.current);
@@ -147,14 +156,14 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
     }, 600);
   }
 
-  async function handleApprove(btn) {
+  async function handleApprove(btn, { confirm = false } = {}) {
     const who = item.name || "this draft";
-    if (!window.confirm("Approve draft for " + who + " → create Gmail draft?")) return;
+    if (confirm && !window.confirm("Approve draft for " + who + " → create Gmail draft?")) return;
     if (btn) { btn.disabled = true; btn.textContent = "…"; }
     const payload = { id: item.id };
     if (subjectRef.current) payload.subject = subjectRef.current.value;
     if (emailRef.current) payload.email = emailRef.current.value.trim();
-    if (bodyRef.current) payload.body_html = bodyRef.current.innerHTML;
+    if (bodyRef.current && editing) payload.body_html = bodyRef.current.innerHTML;
     const res = await postApprove(payload);
     if (!res.ok) {
       if (btn) { btn.textContent = "error"; btn.disabled = false; }
@@ -175,8 +184,12 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
   }
 
   async function handleCopy() {
-    const html = bodyRef.current?.innerHTML || "";
-    const text = bodyRef.current?.innerText || "";
+    const html = editing
+      ? (bodyRef.current?.innerHTML || "")
+      : sanitizeHtml(item.body_html);
+    const text = editing
+      ? (bodyRef.current?.innerText || "")
+      : String(item.body_html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     try {
       await navigator.clipboard.write([
         new ClipboardItem({
@@ -190,7 +203,7 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
     addToast("Body copied");
   }
 
-  const initialBody = sanitizeHtml(item.body_html);
+  const previewHtml = sanitizeHtml(item.body_html);
   const kindLabel = KIND_LABELS[item.kind] || item.kind;
 
   return (
@@ -239,15 +252,29 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
           />
         </div>
       </div>
-      <details className="preview">
-        <summary>Edit email body</summary>
+
+      {!editing && (
+        <div
+          className="body-preview"
+          dangerouslySetInnerHTML={{ __html: previewHtml || "<p><em>Empty body</em></p>" }}
+        />
+      )}
+
+      <details
+        ref={detailsRef}
+        className="preview"
+        onToggle={(ev) => {
+          if (ev.currentTarget.open !== editing) onToggleEdit(ev.currentTarget.open);
+        }}
+      >
+        <summary>{editing ? "Editing body" : "Edit email body"}</summary>
         <div
           ref={bodyRef}
           className="body-edit"
           contentEditable
           suppressContentEditableWarning
           spellCheck
-          dangerouslySetInnerHTML={{ __html: initialBody }}
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
           onInput={scheduleSave}
           onPaste={(ev) => {
             ev.preventDefault();
@@ -257,11 +284,12 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
         />
         <p className="edit-hint">Paste is plain text. Edits autosave; Approve creates the Gmail draft.</p>
       </details>
+
       <div className="q-actions">
         <button
           type="button"
           className="btn btn-good approve"
-          onClick={(ev) => handleApprove(ev.currentTarget)}
+          onClick={(ev) => handleApprove(ev.currentTarget, { confirm: false })}
         >
           Approve → Gmail draft
         </button>
@@ -280,12 +308,13 @@ function QueueItem({ item, focused, onFocus, onApproved, onSkipped, addToast, re
 
 export default function Approvals({
   queue, history, needsCount, onShowOverview, addToast,
-  refreshQueue, refreshHistory, setRunMode,
+  refreshQueue, refreshHistory, setRunMode, onRunStage,
 }) {
   const [filter, setFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("");
   const [search, setSearch] = useState("");
   const [focusIdx, setFocusIdx] = useState(0);
+  const [editingId, setEditingId] = useState(null);
 
   const sorted = sortQueue(queue);
   const filtered = filterQueue(sorted, filter, trackFilter, search);
@@ -311,6 +340,19 @@ export default function Approvals({
     if (items[idx]) items[idx].scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
 
+  function advanceAfterRemove(removedId) {
+    const idx = filtered.findIndex(i => i.id === removedId);
+    const nextLen = Math.max(0, filtered.length - 1);
+    if (nextLen === 0) {
+      setFocusIdx(0);
+      setEditingId(null);
+      return;
+    }
+    const nextIdx = Math.min(Math.max(idx, 0), nextLen - 1);
+    setFocusIdx(nextIdx);
+    setEditingId(null);
+  }
+
   function onApproved(id, link, data = {}) {
     const bits = ["Draft created."];
     if (data.warn) bits.push(String(data.warn));
@@ -325,6 +367,7 @@ export default function Approvals({
         <button className="linkish" onClick={() => handleUndo(id)}>Undo</button>
       </span>
     );
+    advanceAfterRemove(id);
   }
 
   function onSkipped(id, label) {
@@ -334,6 +377,7 @@ export default function Approvals({
         <button className="linkish" onClick={() => handleUndo(id)}>Undo</button>
       </span>
     );
+    advanceAfterRemove(id);
   }
 
   async function handleUndo(id) {
@@ -343,6 +387,17 @@ export default function Approvals({
       await Promise.all([refreshQueue(), refreshHistory()]);
     } else {
       addToast(data.error || "Could not undo");
+    }
+  }
+
+  async function startTriage() {
+    setRunMode("triage");
+    if (onRunStage) {
+      await onRunStage("triage");
+    } else {
+      const res = await postRun("triage");
+      if (res.ok) addToast("Triage run started");
+      else addToast(res.status === 409 ? "Already running" : "Could not start run");
     }
   }
 
@@ -361,7 +416,9 @@ export default function Approvals({
         const item = filtered[focusIdx];
         if (item) {
           const btn = document.querySelector(`.q-item[data-id="${CSS.escape(item.id)}"] button.approve`);
-          if (btn) btn.click();
+          if (btn && window.confirm("Approve draft for " + (item.name || "this draft") + " → Gmail?")) {
+            btn.click();
+          }
         }
       } else if (key === "s") {
         ev.preventDefault();
@@ -374,21 +431,25 @@ export default function Approvals({
         }
       } else if (key === "o") {
         ev.preventDefault();
-        const items = document.querySelectorAll(".q-item");
-        const d = items[focusIdx]?.querySelector("details.preview");
-        if (d) d.open = !d.open;
+        const item = filtered[focusIdx];
+        if (item) setEditingId(editingId === item.id ? null : item.id);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filtered, focusIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, focusIdx, editingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // keep focus in bounds when filtered list changes
   useEffect(() => {
     if (focusIdx >= filtered.length && filtered.length > 0) {
       setFocusIdx(filtered.length - 1);
     }
   }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Focused card: keep preview readable; don't force edit open
+  useEffect(() => {
+    const item = filtered[focusIdx];
+    if (item && editingId && editingId !== item.id) setEditingId(null);
+  }, [focusIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const searching = search || filter !== "all" || trackFilter;
 
@@ -397,10 +458,9 @@ export default function Approvals({
       <div className="section-head">
         <h2>Approvals <span className="qsplit">{splitLabel}</span></h2>
         <p className="hint">
-          <span className="kbd">j</span>/<span className="kbd">k</span> move · <span className="kbd">?</span> help
+          <span className="kbd">j</span>/<span className="kbd">k</span> move · <span className="kbd">a</span> approve · <span className="kbd">?</span> help
         </p>
       </div>
-      <p className="section-lede">Review drafts before they go to Gmail. Edit freely, then approve.</p>
 
       {needsCount > 0 && (
         <p className="urgency-banner">
@@ -459,10 +519,7 @@ export default function Approvals({
                 <button
                   type="button"
                   className="btn btn-primary cta"
-                  onClick={() => {
-                    setRunMode("triage");
-                    document.getElementById("chrome-run-btn")?.click();
-                  }}
+                  onClick={startTriage}
                 >
                   Start Triage
                 </button>
@@ -481,6 +538,8 @@ export default function Approvals({
               addToast={addToast}
               refreshQueue={refreshQueue}
               refreshHistory={refreshHistory}
+              editing={editingId === item.id}
+              onToggleEdit={(open) => setEditingId(open ? item.id : null)}
             />
           ))
         )}
