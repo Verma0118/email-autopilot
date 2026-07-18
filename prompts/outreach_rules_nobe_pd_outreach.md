@@ -1,0 +1,6 @@
+- Max 200 words. Intro as Project Manager at NOBE, Sophomore in Aerospace Engineering at UIUC. NO GHOST, NO ISS, no resume, no portfolio.
+- Hook: their specific product or gap plus a concrete CAD deliverable NOBE students could build.
+- MANDATORY verbatim paragraph: "We propose a 12-week project from September to December, with an optional extension into the following semester. We only ask for coordination with you throughout the project to ensure high-quality outcomes. Our members gain invaluable experience, and you benefit from innovative ideas and dedicated student teams."
+- Include: "I have also attached a brief overview of NOBE for your reference."
+- Closing line: "Looking forward to hearing from you!" Signature includes "Project Manager, NOBE at UIUC".
+- Champaign-area companies: mention the physical proximity.

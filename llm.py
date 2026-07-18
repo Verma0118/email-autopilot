@@ -98,7 +98,11 @@ def call(prompt, use_exa=False, max_turns=8):
 
 
 def call_with_retry(prompt, use_exa=False, retry_suffix=None, validate=None):
-    """One call; retry only on lint/validation failure when meter still has room."""
+    """One call; retry only on lint/validation failure when meter still has room.
+
+    The second call is a short fix-only prompt (previous JSON + errors), not a
+    full replay of the original prompt — that nearly doubled input tokens.
+    """
     result = call(prompt, use_exa=use_exa)
     errors = validate(result) if validate else []
     if not errors:
@@ -108,8 +112,19 @@ def call_with_retry(prompt, use_exa=False, retry_suffix=None, validate=None):
             or calls_remaining() < 1
             or llm_down):
         return result, errors
-    feedback = (retry_suffix or "Your previous output had these problems, fix ALL of them:") + "\n- " + "\n- ".join(errors)
-    result = call(prompt + "\n\n" + feedback, use_exa=use_exa)
+    header = retry_suffix or (
+        "Fix the previous JSON draft. Output ONLY the corrected JSON object. "
+        "Problems to fix:"
+    )
+    prev = json.dumps(result, ensure_ascii=False)
+    if len(prev) > 4000:
+        prev = prev[:4000] + "…"
+    fix_prompt = (
+        f"{header}\n- " + "\n- ".join(errors)
+        + "\n\nPrevious output:\n" + prev
+    )
+    # Retries never need Exa — drafting/lint fixes are local.
+    result = call(fix_prompt, use_exa=False)
     errors = validate(result) if validate else []
     return result, errors
 

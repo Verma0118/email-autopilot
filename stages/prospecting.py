@@ -183,7 +183,11 @@ def run(contacts, report, cap_override, log, dry_run=False):
         })
         try:
             found = llm.call(prompt, use_exa=True, max_turns=discovery_turns)
-            for candidate in (found.get("candidates") or [])[:10]:
+            max_cands = max(1, int(getattr(
+                config, "SCOUT_MAX_CANDIDATES_PER_DISCOVERY", 3) or 3))
+            for candidate in (found.get("candidates") or [])[:max_cands]:
+                if written[track_key] >= cap:
+                    break
                 candidate.setdefault("segment", seg["name"])
                 consider(candidate, track_key)
         except llm.LLMError as e:

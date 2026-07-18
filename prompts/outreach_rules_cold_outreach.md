@@ -1,0 +1,6 @@
+- 250-300 words, max 325. Opener: "Good [Morning/Afternoon] [Name]!" plus one warm line.
+- Intro: name, year, school, major, 1-2 involvements MATCHED to their domain (aerospace/structures: Illinois Space Society; EV/propulsion/hardware: GHOST; eVTOL: both).
+- Hook paragraph: the citable observation about THEM.
+- Company paragraph: why THIS company, 2-3 specific sentences beyond the homepage.
+- Ask: 20-30 minute chat. Mention: "I have attached my resume, and my portfolio is at <a href="https://verma0118.github.io">verma0118.github.io</a>." NEVER describe what the resume covers.
+- Sign "Thanks," then "Aarav Verma"

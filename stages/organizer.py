@@ -35,6 +35,19 @@ def _subject_for(email_type):
     return config.FIXED_SUBJECTS.get(email_type)
 
 
+def _track_rules(email_type):
+    """Inject only the matching track rules (not all three) into the prompt."""
+    key = email_type or "startup_discovery"
+    if key == "cold_outreach_not_alum":
+        key = "cold_outreach"
+    path = config.PROMPT_DIR / f"outreach_rules_{key}.md"
+    if path.exists():
+        return path.read_text().strip()
+    # Fallback: startup rules so organize never sends an empty rules block
+    fallback = config.PROMPT_DIR / "outreach_rules_startup_discovery.md"
+    return fallback.read_text().strip() if fallback.exists() else ""
+
+
 def _brief_needs_organize(rec):
     if rec.get("organized"):
         return False
@@ -92,6 +105,7 @@ def run(contacts, report, log, dry_run=False):
             "<<EMAIL_TYPE>>": email_type, "<<WHY_ICP>>": cand.get("why_icp"),
             "<<SIGNAL>>": brief.get("company_signal"), "<<HOOKS>>": hooks,
             "<<SUBJECT>>": subject,
+            "<<TRACK_RULES>>": _track_rules(email_type),
             "<<CALENDAR_URL>>": calendar_url or "NONE_FOUND",
         }.items():
             prompt = prompt.replace(token, str(value or ""))

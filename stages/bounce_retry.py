@@ -25,12 +25,17 @@ def run(contacts, report, cap, log, dry_run=False):
     todo = [c for c in crm.eligible_for(contacts, "bounce_retry")
             if not (c.get("autopilot", {}).get("bounce_retry") or {}).get("status")][: cap]
 
+    bounce_turns = int(getattr(config, "BOUNCE_MAX_TURNS", 7) or 7)
     for c in todo:
         status.check_stop()
+        if not status.meter_allows(config.BOUNCE_METER_MAX_PCT):
+            r.setdefault("skipped", []).append(
+                f"meter {status.budget_pct():.0f}% — bounce stopped mid-run")
+            break
         status.update(detail=f"researching bounce fix: {c['name']} ({c['company']})",
                       stream=config.STREAM_LABELS.get(c.get("email_type"), c.get("email_type")))
         try:
-            result = llm.call(_render(c), use_exa=True, max_turns=12)
+            result = llm.call(_render(c), use_exa=True, max_turns=bounce_turns)
         except llm.LLMError as e:
             r["errors"].append(f"{c['name']}: {e}")
             if llm.llm_down:

@@ -62,6 +62,13 @@ SCOUT_DISCOVERY_MAX_TURNS = 10
 SCOUT_MAX_TRACKS_PER_RUN = 1
 # Don't spend a second LLM call on lint retry when meter is already this high.
 RETRY_METER_MAX_PCT = 0.88
+# Cap Exa amplification: research at most this many discovery hits per track.
+SCOUT_MAX_CANDIDATES_PER_DISCOVERY = 3
+# Bounce research turns (was hardcoded 12).
+BOUNCE_MAX_TURNS = 7
+# Bound reply-thread context stuffed into the LLM.
+REPLY_THREAD_MAX_MSGS = 8
+REPLY_THREAD_MSG_CHARS = 1000
 
 PANEL_PORT = 8787
 
