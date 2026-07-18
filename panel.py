@@ -3,10 +3,16 @@
 http://localhost:8787 — Run / Stop, approval queue, live feed, dashboard.
 Binds 127.0.0.1 only; never exposed to the network.
 Run persistently via launchd (com.aarav.emailcrm.panel, KeepAlive).
+
+Auto-reloads when code on disk changes (e.g. after git pull), and exposes
+POST /update so the UI can pull main without touching the terminal.
 """
 import json
+import os
 import subprocess
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -15,9 +21,82 @@ import config
 import queue_store
 import status
 
+HERE = Path(__file__).resolve().parent
 PYTHON = config.AUTOPILOT / ".venv" / "bin" / "python"
 RUN_PY = config.AUTOPILOT / "run.py"
 DISMISS_FILE = config.STATE_DIR / "dismissed_needs.json"
+
+
+def _repo_root():
+    if (config.AUTOPILOT / ".git").exists():
+        return config.AUTOPILOT
+    if (HERE / ".git").exists():
+        return HERE
+    return config.AUTOPILOT
+
+
+def _watched_paths():
+    paths = [
+        HERE / "panel.py", HERE / "status.py", HERE / "config.py",
+        HERE / "queue_store.py", HERE / "gmail.py", HERE / "crm.py",
+        HERE / "llm.py", HERE / "run.py", HERE / "publish.py",
+    ]
+    stages = HERE / "stages"
+    if stages.is_dir():
+        paths.extend(sorted(stages.glob("*.py")))
+    return [p for p in paths if p.exists()]
+
+
+def _code_stamp():
+    return tuple((str(p), p.stat().st_mtime_ns) for p in _watched_paths())
+
+
+def _reexec_soon(delay=0.4):
+    """Replace this process with a fresh panel.py (keeps the same port/terminal)."""
+    def go():
+        time.sleep(delay)
+        print("reloading panel…", flush=True)
+        os.execv(sys.executable, [sys.executable, str(HERE / "panel.py"), *sys.argv[1:]])
+    threading.Thread(target=go, daemon=True).start()
+
+
+def _watch_code_for_reload():
+    stamp = _code_stamp()
+    while True:
+        time.sleep(1.5)
+        try:
+            now = _code_stamp()
+            if now != stamp:
+                print("code changed on disk — reloading panel", flush=True)
+                _reexec_soon(0.25)
+                return
+        except Exception:
+            pass
+
+
+def _git_head():
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(_repo_root()), text=True, timeout=10,
+        ).strip()
+    except Exception:
+        return None
+
+
+def _git_pull():
+    repo = _repo_root()
+    proc = subprocess.run(
+        ["git", "pull", "--ff-only", "origin", "main"],
+        cwd=str(repo), capture_output=True, text=True, timeout=120,
+    )
+    out = (proc.stdout or "") + (proc.stderr or "")
+    return {
+        "ok": proc.returncode == 0,
+        "changed": proc.returncode == 0 and "Already up to date" not in out,
+        "message": out.strip()[-600:],
+        "head": _git_head(),
+    }
 
 
 def _load_dismissed():
@@ -752,6 +831,7 @@ main { padding-top:20px !important; }
         </div>
         <button id="run" type="button" class="btn btn-primary">Run now</button>
         <button id="stop" type="button" class="btn btn-danger">Stop</button>
+        <button id="update" type="button" class="btn btn-quiet" title="git pull + reload panel">Update</button>
       </div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Panel sections">
@@ -866,7 +946,7 @@ main { padding-top:20px !important; }
     <a href="/files/digest" target="_blank" rel="noopener">Digest</a> ·
     <a href="/files/prospects" target="_blank" rel="noopener">Briefs</a> ·
     <a href="/files/logs" target="_blank" rel="noopener">Logs</a><br>
-    Scheduled run: daily 7:04 AM · warning at 60% of the autopilot token budget
+    Scheduled run: daily 7:04 AM · panel <span id="build">…</span> · click <strong>Update</strong> for latest (auto-reloads after pull)
   </footer>
 </main>
 <div class="toast-wrap" id="toasts" aria-live="polite"></div>
@@ -1583,6 +1663,26 @@ el("stop").addEventListener("click", async () => {
   else { toast("Stop requested"); poll(); }
 });
 
+el("update")?.addEventListener("click", async () => {
+  const btn = el("update");
+  btn.disabled = true;
+  toast("Pulling latest from GitHub…");
+  try {
+    const res = await fetch("/update", { method: "POST" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) {
+      toast(j.error || j.message || "Update failed — check git on this Mac");
+      btn.disabled = false;
+      return;
+    }
+    toast(j.changed ? "Updated — reloading panel…" : "Already latest — reloading…");
+    setTimeout(() => location.reload(), 1400);
+  } catch (_) {
+    toast("Update failed");
+    btn.disabled = false;
+  }
+});
+
 (async () => {
   const hash = (location.hash || "").replace("#", "");
   let tab = "approvals";
@@ -1597,6 +1697,10 @@ el("stop").addEventListener("click", async () => {
   }
   showPanel(tab);
   poll();
+  try {
+    const v = await (await fetch("/version")).json();
+    if (v.head && el("build")) el("build").textContent = v.head;
+  } catch (_) {}
   setInterval(poll, 2000);
   setInterval(loadQueue, 5000);
   setInterval(loadReport, 15000);
@@ -1613,6 +1717,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        if "text/html" in ctype or ctype.startswith("application/json"):
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -1666,6 +1772,8 @@ a{{color:#0c6b54}} ul{{padding-left:1.2rem}} li{{margin:6px 0}}</style></head>
         path = self.path.split("?", 1)[0]
         if path == "/":
             self._send(200, PAGE, "text/html; charset=utf-8")
+        elif path == "/version":
+            self._send(200, json.dumps({"head": _git_head(), "repo": str(_repo_root())}))
         elif path.startswith("/dashboard"):
             dash = config.ROOT / "dashboard.html"
             if dash.exists():
@@ -1759,7 +1867,23 @@ background:#f7faf8;text-align:center}strong{display:block;font-size:1.2rem;margi
             self._send(404, "{}")
 
     def do_POST(self):
-        if self.path == "/run":
+        if self.path == "/update":
+            try:
+                result = _git_pull()
+            except Exception as e:
+                self._send(500, json.dumps({"ok": False, "error": str(e)[:200]}))
+                return
+            if not result["ok"]:
+                self._send(500, json.dumps({
+                    "ok": False,
+                    "error": "git pull failed",
+                    "message": result.get("message") or "",
+                }))
+                return
+            self._send(200, json.dumps(result))
+            # Always reexec so PAGE/CSS/handlers match disk (even if already latest)
+            _reexec_soon(0.5)
+        elif self.path == "/run":
             if config.LOCK_FILE.exists():
                 self._send(409, '{"error":"already running"}')
                 return
@@ -1922,6 +2046,8 @@ background:#f7faf8;text-align:center}strong{display:block;font-size:1.2rem;margi
 
 
 if __name__ == "__main__":
+    threading.Thread(target=_watch_code_for_reload, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", config.PANEL_PORT), Handler)
-    print(f"panel on http://localhost:{config.PANEL_PORT}")
+    head = _git_head() or "?"
+    print(f"panel on http://localhost:{config.PANEL_PORT} ({head}) — auto-reloads on code change")
     server.serve_forever()
