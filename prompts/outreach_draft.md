@@ -13,10 +13,15 @@ Subject (exact): <<SUBJECT>>
 Track rules:
 <<TRACK_RULES>>
 
+Mandatory opener (every track, before any intro). Two short paragraphs / lines, using their FIRST NAME only:
+1. Good Morning [FirstName], OR Good Afternoon [FirstName], (comma after the name)
+2. Hope your week is going well! OR Hope your day is going well!
+Do NOT use bare "Hi Name," and do NOT start with "My name is…". This warm human opener is required.
+
 CTA: one only. Calendar link as <a href>Calendar Invite</a>: <<CALENDAR_URL>>
 If NONE_FOUND, offer to send a calendar invite. Never invent a URL.
 
-Hard rejects: em/en dashes; hyphen as clause connector; contractions; semicolons; max 2 consecutive "I" sentences; no bullets/bold/emojis; banned "would love to", "excited to", "passionate about", "reach out", "I hope this email finds you well". Simple HTML paragraphs.
+Hard rejects: em/en dashes; hyphen as clause connector; contractions; semicolons; max 2 consecutive "I" sentences; no bullets/bold/emojis; banned "would love to", "excited to", "passionate about", "reach out", "I hope this email finds you well" (the shorter "Hope your week/day is going well!" IS required and allowed). Simple HTML paragraphs.
 
 Output ONLY JSON:
 {"subject": "<<SUBJECT>>", "body_html": "<p>...</p>", "hook_used": "one line"}

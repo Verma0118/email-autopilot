@@ -1,3 +1,7 @@
+- ALWAYS open with two short lines before the intro (exact shape, first name only):
+  1. "Good Morning [Name]," or "Good Afternoon [Name]," (comma, not exclamation)
+  2. "Hope your week is going well!" (or "Hope your day is going well!")
+  Never open with bare "Hi [Name]," and never jump straight into the pitch.
 - Max 200 words. Intro as Project Manager at NOBE, Sophomore in Aerospace Engineering at UIUC. NO GHOST, NO ISS, no resume, no portfolio.
 - Hook: their specific product gap plus a concrete ENGINEERED deliverable (CAD, fixture, prototype, mechanism) a student team can finish in ~12 weeks to one semester — not a vague partnership.
 - MANDATORY verbatim paragraph: "We propose a 12-week project from September to December, with an optional extension into the following semester. We only ask for coordination with you throughout the project to ensure high-quality outcomes. Our members gain invaluable experience, and you benefit from innovative ideas and dedicated student teams."
