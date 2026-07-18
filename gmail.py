@@ -147,18 +147,6 @@ def find_bounces(newer_days=30):
     return out
 
 
-def list_drafts_meta(max_results=100):
-    svc = get_service()
-    resp = svc.users().drafts().list(userId="me", maxResults=max_results).execute()
-    out = []
-    for d in resp.get("drafts", []):
-        msg = d.get("message", {})
-        full = svc.users().drafts().get(userId="me", id=d["id"], format="metadata").execute()
-        h = {x["name"].lower(): x["value"] for x in full["message"]["payload"].get("headers", [])}
-        out.append({"draft_id": d["id"], "to": h.get("to", ""), "subject": h.get("subject", "")})
-    return out
-
-
 # ---------- write side (drafts ONLY — no send scope exists) ----------
 
 def _attach_files(mime, attachments):

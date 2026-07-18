@@ -352,10 +352,10 @@ def render(contacts, report, llm_calls, dry_run=False):
     sync = report.get("inbox_sync", {})
     ia = report.get("inbox_agent", {})
     ra = report.get("reply_agent", {})
-    nu = report.get("reply_nudges", {})
     fu = report.get("followups", {})
     br = report.get("bounce_retry", {})
     pr = report.get("prospecting", {})
+    org = report.get("organizer", {})
     counts = crm.counts(contacts)
     backlog = len(crm.followup_candidates(contacts))
     # Organizer consumes *.json briefs; count unorganized ones waiting for Organize
@@ -375,16 +375,15 @@ def render(contacts, report, llm_calls, dry_run=False):
         except Exception:
             unorganized.append({"file": path.name, "name": path.stem, "company": "", "track": ""})
     briefs_queued = len(unorganized)
-    org = report.get("organizer", {})
-    # Bounce/followups/nudges now land in Approvals; only legacy Gmail-direct lines remain
-    drafts_today = [x for x in (nu.get("drafted", []) + fu.get("drafted", []))
+    # Legacy Gmail-direct lines only (bounce/followups now go through Approvals)
+    drafts_today = [x for x in (fu.get("drafted", []) or [])
                     if DRAFT_LINK_RE.search(x or "")]
     linked_bounce = [x for x in br.get("fixed", []) if DRAFT_LINK_RE.search(x or "")]
     gmail_drafts = _parse_gmail_drafts(drafts_today + linked_bounce)
     errors = (sync.get("errors", []) + ia.get("errors", []) + ra.get("errors", [])
-              + nu.get("errors", []) + fu.get("errors", []) + org.get("errors", [])
+              + fu.get("errors", []) + org.get("errors", [])
               + br.get("errors", []) + pr.get("errors", []) + report.get("fatal", []))
-    we_owe = list(ra.get("we_owe", []) or []) + list(nu.get("we_owe", []) or [])
+    we_owe = list(ra.get("we_owe", []) or [])
     pending_items = queue_store.pending()
     pending_emails = [i.get("email") for i in pending_items]
     pending_kinds = {}

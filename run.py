@@ -4,9 +4,10 @@
 Usage:
   run.py                 full daily run
   run.py --dry-run       no mutations anywhere, digest to dryrun- file
-  run.py --stage sync|bounce|followup|prospect|digest
+  run.py --stage triage|reply|organize|scout|bounce|followup|digest|inbox
   run.py --cap N         override the stage cap
   run.py --setup         one-time Gmail OAuth flow
+  # legacy aliases: sync→inbox, nudge→reply, prospect→scout
 
 Drafts only. This system has no gmail.send scope and cannot send email.
 

@@ -4,12 +4,11 @@ Covers both direct replies and passed-promise nudges."""
 from datetime import date
 
 import config
-import crm
 import llm
 import queue_store
 import status
 import validators
-from stages.reply_nudges import _thread_text  # thread renderer with FROM_US markers
+from stages.thread_text import thread_text
 
 
 def _lint(result, expected_subject):
@@ -50,7 +49,7 @@ def run(contacts, report, cap, log, dry_run=False):
                       detail=f"checking conversation: {c['name']} ({c['company']})",
                       stream=config.STREAM_LABELS.get(c.get("email_type"), "reply"))
         try:
-            thread, last_us, subject = _thread_text(c["gmail_thread_id"])
+            thread, last_us, subject = thread_text(c["gmail_thread_id"])
         except Exception as e:
             r["errors"].append(f"{c['name']}: thread fetch failed: {e}")
             continue

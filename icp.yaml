@@ -1,4 +1,5 @@
-# Scout Agent targeting config. Three tracks, all scraped every run (caps apply).
+# Scout Agent targeting config. Three tracks; Full/scout runs rotate
+# SCOUT_MAX_TRACKS_PER_RUN tracks per day (see config.py). Caps apply.
 
 tracks:
   startup_discovery:

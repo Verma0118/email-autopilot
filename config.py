@@ -82,8 +82,8 @@ FOLLOW_UP_DAYS = 7
 # Your scheduling link (used when recent sent mail has none). Set this.
 CALENDAR_URL = ""
 
-# Fixed subject lines per email type (agent-rules.md section 2). Never vary
-# except NOBE, which templates the company name (see subject_for).
+# Fixed subject lines per email type. Never vary except NOBE, which templates
+# the company name (see subject_for). networking_warm kept for legacy CRM rows.
 FIXED_SUBJECTS = {
     "startup_discovery": "UIUC Students | Coffee Chat Request | Aarav Verma, Rushil Patil",
     "networking_warm": "Coffee Chat Request | Aarav Verma, Fellow Illini",
