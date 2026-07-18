@@ -6,8 +6,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "→ repo: $ROOT"
+
+# Local edits (e.g. accidental status.py tweaks) block git pull — stash them.
+if ! git diff --quiet OR true; then :; fi
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "→ stashing local changes so pull can proceed…"
+  git stash push -u -m "emailcrm-refresh-panel $(date +%Y%m%d-%H%M%S)" || true
+fi
+
 echo "→ pulling origin/main…"
 git fetch origin main
+git checkout main >/dev/null 2>&1 || true
 git pull --ff-only origin main
 
 HEAD="$(git rev-parse --short HEAD)"
@@ -15,21 +24,26 @@ echo "→ now on $HEAD"
 
 echo "→ stopping old panel…"
 pkill -f "[Pp]anel.py" 2>/dev/null || true
+sleep 0.3
+
 # launchd KeepAlive may respawn; bounce the agent if loaded
 if launchctl print "gui/$(id -u)/com.aarav.emailcrm.panel" >/dev/null 2>&1; then
   echo "→ relaunching launchd panel…"
   launchctl kickstart -k "gui/$(id -u)/com.aarav.emailcrm.panel" || true
   sleep 1
 else
-  PY="$ROOT/.venv/bin/python"
-  if [[ ! -x "$PY" ]]; then PY="python3"; fi
+  PY=""
+  for candidate in "$ROOT/.venv/bin/python" "$ROOT/venv/bin/python"; do
+    if [[ -x "$candidate" ]]; then PY="$candidate"; break; fi
+  done
+  if [[ -z "$PY" ]]; then PY="python3"; fi
   echo "→ starting panel with $PY…"
   nohup "$PY" "$ROOT/panel.py" >/tmp/emailcrm-panel.log 2>&1 &
   sleep 1
 fi
 
 # Wait for /version (new builds) or / to answer
-for i in 1 2 3 4 5 6 7 8; do
+for i in 1 2 3 4 5 6 7 8 9 10; do
   if curl -fsS "http://127.0.0.1:8787/version" >/tmp/emailcrm-version.json 2>/dev/null; then
     echo "→ panel live: $(cat /tmp/emailcrm-version.json)"
     echo
@@ -41,12 +55,12 @@ for i in 1 2 3 4 5 6 7 8; do
 done
 
 # Old panel has no /version — say so clearly
-if curl -fsS "http://127.0.0.1:8787/" | grep -q "What blocked the last run"; then
+if curl -fsS "http://127.0.0.1:8787/" 2>/dev/null | grep -q "What blocked the last run"; then
   echo "→ panel looks updated (new Overview copy), but /version missing — hard-refresh browser."
   exit 0
 fi
 
-if curl -fsS "http://127.0.0.1:8787/" | grep -q "Errors last run"; then
+if curl -fsS "http://127.0.0.1:8787/" 2>/dev/null | grep -q "Errors last run"; then
   echo "✗ Still serving the OLD UI (saw “Errors last run”)."
   echo "  Something else is bound to :8787 or launchd didn't pick up the new files."
   echo "  Run: lsof -nP -iTCP:8787 -sTCP:LISTEN"
