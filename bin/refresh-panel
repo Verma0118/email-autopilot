@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# One-shot: pull latest + restart the localhost panel.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+echo "→ repo: $ROOT"
+echo "→ pulling origin/main…"
+git fetch origin main
+git pull --ff-only origin main
+
+HEAD="$(git rev-parse --short HEAD)"
+echo "→ now on $HEAD"
+
+echo "→ stopping old panel…"
+pkill -f "[Pp]anel.py" 2>/dev/null || true
+# launchd KeepAlive may respawn; bounce the agent if loaded
+if launchctl print "gui/$(id -u)/com.aarav.emailcrm.panel" >/dev/null 2>&1; then
+  echo "→ relaunching launchd panel…"
+  launchctl kickstart -k "gui/$(id -u)/com.aarav.emailcrm.panel" || true
+  sleep 1
+else
+  PY="$ROOT/.venv/bin/python"
+  if [[ ! -x "$PY" ]]; then PY="python3"; fi
+  echo "→ starting panel with $PY…"
+  nohup "$PY" "$ROOT/panel.py" >/tmp/emailcrm-panel.log 2>&1 &
+  sleep 1
+fi
+
+# Wait for /version (new builds) or / to answer
+for i in 1 2 3 4 5 6 7 8; do
+  if curl -fsS "http://127.0.0.1:8787/version" >/tmp/emailcrm-version.json 2>/dev/null; then
+    echo "→ panel live: $(cat /tmp/emailcrm-version.json)"
+    echo
+    echo "Open http://localhost:8787 and hard-refresh (Cmd+Shift+R)."
+    echo "You should see an Update button next to Stop, and footer hash $HEAD."
+    exit 0
+  fi
+  sleep 0.5
+done
+
+# Old panel has no /version — say so clearly
+if curl -fsS "http://127.0.0.1:8787/" | grep -q "What blocked the last run"; then
+  echo "→ panel looks updated (new Overview copy), but /version missing — hard-refresh browser."
+  exit 0
+fi
+
+if curl -fsS "http://127.0.0.1:8787/" | grep -q "Errors last run"; then
+  echo "✗ Still serving the OLD UI (saw “Errors last run”)."
+  echo "  Something else is bound to :8787 or launchd didn't pick up the new files."
+  echo "  Run: lsof -nP -iTCP:8787 -sTCP:LISTEN"
+  echo "  Then: kill that PID and re-run this script."
+  exit 1
+fi
+
+echo "✗ Panel did not come up on :8787. Check /tmp/emailcrm-panel.log"
+exit 1
